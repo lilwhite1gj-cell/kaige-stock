@@ -24,7 +24,7 @@ jobs:
         run: npm install -g wrangler
 
       - name: Deploy via Wrangler
-        run: npx wrangler deploy --log-level debug
+        run: npx wrangler deploy
         env:
           CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
           CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
