@@ -28,3 +28,26 @@ jobs:
         env:
           CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
           CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+
+      - name: Ensure KV binding
+        run: |
+          ACCOUNT_ID="${{ secrets.CLOUDFLARE_ACCOUNT_ID }}"
+          TOKEN="${{ secrets.CLOUDFLARE_API_TOKEN }}"
+          SCRIPT_NAME="kaige-stock"
+          KV_ID="9fa34598836a445c8aa4a25ff331faa6"
+
+          SETTINGS=$(curl -s "https://api.cloudflare.com/client/v4/accounts/${ACCOUNT_ID}/workers/scripts/${SCRIPT_NAME}/settings" \
+            -H "Authorization: Bearer ${TOKEN}")
+          echo "Current settings: $SETTINGS"
+
+          NEW_BINDINGS=$(echo "$SETTINGS" | jq --arg kv_id "$KV_ID" '.result.bindings // [] | map(select(.name != "NEWS_KV")) + [{"type":"kv_namespace","name":"NEWS_KV","namespace_id":$kv_id}]')
+          echo "New bindings: $NEW_BINDINGS"
+
+          echo "$SETTINGS" | jq --argjson bindings "$NEW_BINDINGS" '.result | .bindings = $bindings' > updated_settings.json
+          echo "Updated settings:"
+          cat updated_settings.json
+
+          curl -s -X PUT "https://api.cloudflare.com/client/v4/accounts/${ACCOUNT_ID}/workers/scripts/${SCRIPT_NAME}/settings" \
+            -H "Authorization: Bearer ${TOKEN}" \
+            -H "Content-Type: application/json" \
+            -d @updated_settings.json
