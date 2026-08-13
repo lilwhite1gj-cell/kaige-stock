@@ -10,7 +10,7 @@ binding = "ASSETS"
 
 # Cloudflare KV：云端存储新闻/分析/状态（替代本地文件）
 kv_namespaces = [
-  { binding = "NEWS_KV", id = "REPLACE_WITH_YOUR_KV_ID" }
+  { binding = "NEWS_KV", id = "9fa34598836a445c8aa4a25ff331faa6" }
 ]
 
 # 定时任务：每日 UTC 01:00（北京时间 09:00）自动抓取新闻 + 生成 AI 分析
