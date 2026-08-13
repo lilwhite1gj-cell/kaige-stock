@@ -15,10 +15,16 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
-      - name: Deploy via Wrangler
-        uses: cloudflare/wrangler-action@v3
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
         with:
-          apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
-          accountId: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
-          # 默认执行 `wrangler deploy`，会读取仓库内的 wrangler.toml
-          # KV 绑定（NEWS_KV）/ 静态资源 / 定时任务均随部署自动生效
+          node-version: '22'
+
+      - name: Install Wrangler
+        run: npm install -g wrangler
+
+      - name: Deploy via Wrangler
+        run: npx wrangler deploy
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
