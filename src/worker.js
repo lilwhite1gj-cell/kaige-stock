@@ -17,7 +17,7 @@ function getKey(env) {
   return (env && env.DEEPSEEK_API_KEY) || config.deepseek.apiKey || '';
 }
 
-async function handleApi(request, env) {
+async function handleApi(request, env, ctx) {
   // 每次请求注入 KV 存储（无状态 Worker 安全做法）
   scheduler.setStore(createKvStore(env.NEWS_KV));
   const url = new URL(request.url);
@@ -51,9 +51,14 @@ async function handleApi(request, env) {
   }
 
   if (p === '/api/refresh' && request.method === 'POST') {
-    // 后台异步刷新，立即返回
-    scheduler.refreshAll(key).catch((e) => console.error('refresh error', e));
-    return json({ ok: true, message: '已触发刷新' });
+    // 用 ctx.waitUntil 保活，确保刷新任务完整跑完（含抓取+AI）再结束 Worker
+    ctx.waitUntil(
+      scheduler
+        .refreshAll(key)
+        .then(() => console.log('refresh done'))
+        .catch((e) => console.error('refresh error', e && e.stack ? e.stack : e))
+    );
+    return json({ ok: true, message: '已触发刷新，约 20 秒后刷新页面查看' });
   }
 
   return json({ error: 'not found' }, 404);
@@ -64,7 +69,7 @@ export default {
     const url = new URL(request.url);
     if (url.pathname.startsWith('/api/')) {
       try {
-        return await handleApi(request, env);
+        return await handleApi(request, env, ctx);
       } catch (e) {
         return json({ error: String(e && e.message ? e.message : e) }, 500);
       }
