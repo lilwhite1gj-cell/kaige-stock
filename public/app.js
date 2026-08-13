@@ -8,7 +8,24 @@ const state = {
   hasKey: false,
   page: 1,
   pageSize: 10,
+  analysis: null,
+  selectedMarkets: [],
 };
+
+const MARKET_OPTIONS = ['A股', '港股', '美股', '其他'];
+
+function marketOf(s) {
+  return MARKET_OPTIONS.includes(s && s.market) ? s.market : '其他';
+}
+function recommendIndexOf(s) {
+  if (typeof s.recommendIndex === 'number' && s.recommendIndex > 0) return s.recommendIndex;
+  if (s.grade === '推荐投资个股') return 90;
+  if (s.grade === '少量持有个股') return 60;
+  return 30;
+}
+function sortByIndexDesc(arr) {
+  return (arr || []).slice().sort((a, b) => recommendIndexOf(b) - recommendIndexOf(a));
+}
 
 function esc(s) {
   return String(s == null ? '' : s)
@@ -158,6 +175,8 @@ function actionBadge(action) {
 }
 
 function renderAnalysis(a) {
+  if (a && a.stocks) state.analysis = a;
+  a = state.analysis || a;
   const box = document.getElementById('aiContent');
   if (a && a.snapshotNote) {
     box.innerHTML = `<div class="placeholder">
@@ -187,26 +206,33 @@ function renderAnalysis(a) {
     return;
   }
 
+  // 市场筛选：未选任何 = 全部
+  const stocks = (a.stocks || []).filter((s) => {
+    if (!state.selectedMarkets.length) return true;
+    return state.selectedMarkets.includes(marketOf(s));
+  });
+
+  // 分组 + 板块内按推荐指数降序
   const groups = {
-    up: (a.stocks || []).filter((s) => s.grade === '推荐投资个股'),
-    mid: (a.stocks || []).filter((s) => s.grade === '少量持有个股'),
-    down: (a.stocks || []).filter((s) => s.grade === '高风险个股' || !s.grade),
+    up: sortByIndexDesc(stocks.filter((s) => s.grade === '推荐投资个股')),
+    mid: sortByIndexDesc(stocks.filter((s) => s.grade === '少量持有个股')),
+    down: sortByIndexDesc(stocks.filter((s) => s.grade === '高风险个股' || !s.grade)),
   };
+
+  const stockCard = (s) =>
+    `<div class="stock-item">
+      <div class="stock-name">${esc(s.name || '—')}</div>
+      <div class="stock-sector">${esc(s.sector || '')}${s.market ? ' · ' + esc(marketOf(s)) : ''}</div>
+      <div class="stock-rank">推荐指数 ${recommendIndexOf(s)}</div>
+      <div class="stock-reason">${esc(s.reason || '')}</div>
+    </div>`;
 
   const col = (cls, title, arr) =>
     `<div class="grade-col ${cls}">
       <h3>${esc(title)} <span style="font-weight:400;font-size:12px">(${arr.length})</span></h3>
       ${
         arr.length
-          ? arr
-              .map(
-                (s) => `<div class="stock-item">
-                  <div class="stock-name">${esc(s.name || '—')}</div>
-                  <div class="stock-sector">${esc(s.sector || '')}</div>
-                  <div class="stock-reason">${esc(s.reason || '')}</div>
-                </div>`
-              )
-              .join('')
+          ? `<div class="stock-row">${arr.map(stockCard).join('')}</div>`
           : '<div class="stock-reason">暂无</div>'
       }
     </div>`;
@@ -227,9 +253,17 @@ function renderAnalysis(a) {
     )
     .join('');
 
+  const marketFilterHtml = ['全部'].concat(MARKET_OPTIONS)
+    .map((m) => {
+      const active = m === '全部' ? state.selectedMarkets.length === 0 : state.selectedMarkets.includes(m);
+      return `<span class="mchip ${active ? 'active' : ''}" data-m="${esc(m)}">${esc(m)}</span>`;
+    })
+    .join('');
+
   box.innerHTML = `
     ${summary}
-    <h3 style="margin:0 0 10px;font-size:15px;">个股投资分级</h3>
+    <h3 style="margin:0 0 4px;font-size:15px;">个股投资分级</h3>
+    <div class="market-filter" id="marketFilter"><span class="mf-label">市场：</span>${marketFilterHtml}</div>
     <div class="grade-grid">
       ${col('grade-up', '✅ 推荐投资个股', groups.up)}
       ${col('grade-mid', '⚠️ 少量持有个股', groups.mid)}
@@ -238,6 +272,24 @@ function renderAnalysis(a) {
     <h3 style="margin:6px 0 10px;font-size:15px;">每日 ETF 板块建议</h3>
     <div class="etf-grid">${etfs || '<div class="placeholder">暂无 ETF 建议</div>'}</div>
   `;
+
+  // 市场筛选交互
+  const mf = document.getElementById('marketFilter');
+  if (mf) {
+    mf.querySelectorAll('.mchip').forEach((c) => {
+      c.addEventListener('click', () => {
+        const m = c.dataset.m;
+        if (m === '全部') {
+          state.selectedMarkets = [];
+        } else {
+          const i = state.selectedMarkets.indexOf(m);
+          if (i >= 0) state.selectedMarkets.splice(i, 1);
+          else state.selectedMarkets.push(m);
+        }
+        renderAnalysis();
+      });
+    });
+  }
 }
 
 // ===== 加载 =====
@@ -269,6 +321,7 @@ async function loadNews() {
 
 async function loadAnalysis() {
   const a = await api('/api/analysis');
+  state.analysis = a;
   renderAnalysis(a);
 }
 

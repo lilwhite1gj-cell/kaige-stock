@@ -18,7 +18,7 @@ export async function generateAnalysis(news, apiKey) {
 {
   "summary": "今日市场综述（2-3句话）",
   "stocks": [
-    {"name":"股票名称或代码","sector":"所属板块","grade":"推荐投资个股|少量持有个股|高风险个股","reason":"一句话理由"}
+    {"name":"股票名称或代码","sector":"所属板块","market":"A股|港股|美股|其他","grade":"推荐投资个股|少量持有个股|高风险个股","recommendIndex":80,"reason":"一句话理由"}
   ],
   "etfs": [
     {"sector":"板块","name":"ETF名称","code":"ETF代码如510500","action":"买入|持有|回避","reason":"一句话理由"}
@@ -27,8 +27,10 @@ export async function generateAnalysis(news, apiKey) {
 规则：
 1. 个股仅基于新闻中明确提及的标的，最多8只；若无明确标的 stocks 可为空数组。
 2. grade 只能取：推荐投资个股 / 少量持有个股 / 高风险个股。
-3. 给出 3-6 个 ETF 板块建议，action 只能取：买入 / 持有 / 回避。
-4. 所有内容必须客观、带风险提示，不承诺收益。
+3. market 只能取：A股 / 港股 / 美股 / 其他（按上市地判断，如无法判断填其他）。
+4. recommendIndex 为 1-100 的整数：推荐投资个股给 70-100，少量持有给 40-69，高风险给 1-39。
+5. 给出 3-6 个 ETF 板块建议，action 只能取：买入 / 持有 / 回避。
+6. 所有内容必须客观、带风险提示，不承诺收益。
 新闻列表：
 ${sample}`;
 

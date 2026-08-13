@@ -204,10 +204,28 @@ body {
 .grade-down { background: var(--down-soft); border-color: #c3e7d2; }
 .grade-down h3 { color: var(--down); }
 
+/* 市场筛选 */
+.market-filter { display: flex; align-items: center; flex-wrap: wrap; gap: 8px; margin-bottom: 14px; }
+.mf-label { font-size: 13px; color: var(--muted); }
+.mchip {
+  border: 1px solid var(--border); background: #fff; color: var(--muted);
+  padding: 5px 13px; border-radius: 999px; font-size: 13px; cursor: pointer; transition: .15s;
+}
+.mchip:hover { border-color: var(--brand); color: var(--brand); }
+.mchip.active { background: var(--brand); border-color: var(--brand); color: #fff; }
+
+.stock-row {
+  display: flex; gap: 10px; overflow-x: auto; padding-bottom: 8px;
+  scroll-snap-type: x mandatory; -webkit-overflow-scrolling: touch;
+}
+.stock-row .stock-item {
+  flex: 0 0 auto; width: 210px; margin-bottom: 0; scroll-snap-align: start;
+}
 .stock-item { background: #fff; border-radius: 8px; padding: 9px 11px; margin-bottom: 8px; font-size: 13px; }
 .stock-item:last-child { margin-bottom: 0; }
 .stock-name { font-weight: 600; }
 .stock-sector { color: var(--muted); font-size: 12px; }
+.stock-rank { color: var(--brand); font-size: 11px; font-weight: 600; margin-top: 3px; }
 .stock-reason { color: #445; font-size: 12px; margin-top: 3px; }
 
 .summary-box {
@@ -245,4 +263,5 @@ body {
   .brand-text p { display: none; }
   .panel { padding: 14px; }
   .disclaimer { margin-top: 10px; }
+  .stock-row .stock-item { width: 170px; }
 }
