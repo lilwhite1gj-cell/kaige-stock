@@ -1,0 +1,20 @@
+# 运行时日志
+server.log
+
+# 环境变量（含 API Key，切勿提交）
+.env
+
+# 运行时自动生成的数据
+data/news.json
+data/analysis.json
+data/state.json
+
+# 静态快照（由 `npm run snapshot` 生成，属构建产物）
+public/data-snapshot.json
+
+# 依赖
+node_modules/
+
+# 系统文件
+.DS_Store
+Thumbs.db
