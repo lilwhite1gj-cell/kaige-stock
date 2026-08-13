@@ -18,6 +18,10 @@ function getKey(env) {
 }
 
 async function handleApi(request, env, ctx) {
+  // KV 未绑定则明确报错，避免晦涩的 undefined.put 崩溃
+  if (!env || !env.NEWS_KV) {
+    return json({ error: 'NEWS_KV 存储未绑定：请在 Cloudflare 控制台 Worker 设置中添加 KV 命名空间绑定（变量名 NEWS_KV）' }, 500);
+  }
   // 每次请求注入 KV 存储（无状态 Worker 安全做法）
   scheduler.setStore(createKvStore(env.NEWS_KV));
   const url = new URL(request.url);
