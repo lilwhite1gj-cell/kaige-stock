@@ -106,6 +106,7 @@ export async function getConfig(apiKey) {
     lastAnalysisUpdate: state.lastAnalysisUpdate,
     sources: state.sources,
     isFallback: state.isFallback,
+    lastError: state.lastError,
     model: config.deepseek.model,
   };
 }
