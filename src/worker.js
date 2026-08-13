@@ -51,14 +51,21 @@ async function handleApi(request, env, ctx) {
   }
 
   if (p === '/api/refresh' && request.method === 'POST') {
-    // 用 ctx.waitUntil 保活，确保刷新任务完整跑完（含抓取+AI）再结束 Worker
-    ctx.waitUntil(
-      scheduler
-        .refreshAll(key)
-        .then(() => console.log('refresh done'))
-        .catch((e) => console.error('refresh error', e && e.stack ? e.stack : e))
-    );
-    return json({ ok: true, message: '已触发刷新，约 20 秒后刷新页面查看' });
+    // 同步等待刷新完成（含抓取+AI），确保结果写入 KV 后再返回
+    try {
+      await scheduler.refreshAll(key);
+      const st = await scheduler.getConfig(key);
+      return json({
+        ok: true,
+        message: '刷新完成',
+        items: st.sources.length ? '已抓取' : '实时源暂不可用',
+        sources: st.sources,
+        isFallback: st.isFallback,
+        lastError: st.lastError,
+      });
+    } catch (e) {
+      return json({ ok: false, error: String(e && e.message ? e.message : e) }, 500);
+    }
   }
 
   return json({ error: 'not found' }, 404);
