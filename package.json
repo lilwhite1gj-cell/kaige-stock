@@ -1,11 +1,14 @@
 {
   "name": "kaige-stock",
   "version": "1.0.0",
+  "type": "module",
   "description": "恺哥荐股 - 每日财经新闻聚合 + DeepSeek AI 智能分析（个股分级 / ETF板块建议）",
   "main": "server.js",
   "scripts": {
     "start": "node server.js",
-    "snapshot": "node src/snapshot.js"
+    "snapshot": "node src/snapshot.js",
+    "dev": "wrangler dev",
+    "deploy": "wrangler deploy"
   },
   "engines": {
     "node": ">=18"

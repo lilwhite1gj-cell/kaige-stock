@@ -1,100 +1,107 @@
-'use strict';
-
-const config = require('./config');
-const store = require('./store');
-const fetchNews = require('./fetchNews');
-const ai = require('./aiAnalysis');
+import { config } from './config.js';
+import * as fetchNews from './fetchNews.js';
+import * as ai from './aiAnalysis.js';
 
 const NEWS_FILE = 'news.json';
 const ANALYSIS_FILE = 'analysis.json';
 const STATE_FILE = 'state.json';
 
-const state = {
-  aiEnabled: config.aiEnabledByDefault,
-  lastNewsUpdate: null,
-  lastAnalysisUpdate: null,
-  lastError: null,
-  sources: [],
-  isFallback: false,
-};
-
-function loadState() {
-  const saved = store.readJson(STATE_FILE, null);
-  if (saved && typeof saved.aiEnabled === 'boolean') {
-    state.aiEnabled = saved.aiEnabled;
-  }
+// 存储实现由入口注入（本地 fileStore / Cloudflare kvStore），避免 Worker 构建引入 fs
+let store = null;
+export function setStore(s) {
+  store = s;
+}
+function requireStore() {
+  if (!store) throw new Error('store not initialized');
+  return store;
 }
 
-function persistState() {
-  store.writeJson(STATE_FILE, {
-    aiEnabled: state.aiEnabled,
-    lastNewsUpdate: state.lastNewsUpdate,
-    lastAnalysisUpdate: state.lastAnalysisUpdate,
-    lastError: state.lastError,
-    sources: state.sources,
-    isFallback: state.isFallback,
-  });
+function defaultState() {
+  return {
+    aiEnabled: config.aiEnabledByDefault,
+    lastNewsUpdate: null,
+    lastAnalysisUpdate: null,
+    lastError: null,
+    sources: [],
+    isFallback: false,
+  };
 }
 
-async function refreshNews() {
+export async function loadState() {
+  const saved = await requireStore().readJson(STATE_FILE, null);
+  if (saved && typeof saved.aiEnabled === 'boolean') return saved;
+  return defaultState();
+}
+
+export async function saveState(state) {
+  await requireStore().writeJson(STATE_FILE, state);
+}
+
+export async function refreshNews() {
   const result = await fetchNews.fetchAll();
-  store.writeJson(NEWS_FILE, {
+  await requireStore().writeJson(NEWS_FILE, {
     items: result.items,
     fetchedAt: result.fetchedAt,
     isFallback: result.isFallback,
     sources: result.sources,
   });
-  state.lastNewsUpdate = result.fetchedAt;
-  state.sources = result.sources;
-  state.isFallback = result.isFallback;
   return result;
 }
 
-async function refreshAnalysis() {
-  const news = store.readJson(NEWS_FILE, { items: [] });
+export async function refreshAnalysis(apiKey) {
+  const news = await requireStore().readJson(NEWS_FILE, { items: [] });
+  const state = await loadState();
   if (!state.aiEnabled) {
-    store.writeJson(ANALYSIS_FILE, { enabled: false, generatedAt: new Date().toISOString() });
-    state.lastAnalysisUpdate = new Date().toISOString();
+    await requireStore().writeJson(ANALYSIS_FILE, { enabled: false, generatedAt: new Date().toISOString() });
     return;
   }
-  if (!config.deepseek.apiKey) {
-    store.writeJson(ANALYSIS_FILE, { enabled: true, noKey: true, generatedAt: new Date().toISOString() });
-    state.lastAnalysisUpdate = new Date().toISOString();
+  if (!apiKey) {
+    await requireStore().writeJson(ANALYSIS_FILE, { enabled: true, noKey: true, generatedAt: new Date().toISOString() });
     return;
   }
-  const r = await ai.generateAnalysis(news.items || []);
+  const r = await ai.generateAnalysis(news.items || [], apiKey);
   if (r.ok) {
-    store.writeJson(ANALYSIS_FILE, Object.assign({ enabled: true }, r.data, { generatedAt: r.generatedAt }));
+    await requireStore().writeJson(ANALYSIS_FILE, Object.assign({ enabled: true }, r.data, { generatedAt: r.generatedAt }));
   } else {
-    store.writeJson(ANALYSIS_FILE, { enabled: true, error: r.reason, detail: r.detail, generatedAt: new Date().toISOString() });
+    await requireStore().writeJson(ANALYSIS_FILE, {
+      enabled: true,
+      error: r.reason,
+      detail: r.detail,
+      generatedAt: new Date().toISOString(),
+    });
   }
-  state.lastAnalysisUpdate = new Date().toISOString();
 }
 
-async function refreshAll() {
+export async function refreshAll(apiKey) {
+  const state = await loadState();
   try {
-    await refreshNews();
-    await refreshAnalysis();
+    const r = await refreshNews();
+    state.lastNewsUpdate = r.fetchedAt;
+    state.sources = r.sources;
+    state.isFallback = r.isFallback;
+    await refreshAnalysis(apiKey);
+    state.lastAnalysisUpdate = new Date().toISOString();
     state.lastError = null;
   } catch (e) {
     state.lastError = String(e && e.message ? e.message : e);
   } finally {
-    persistState();
+    await saveState(state);
   }
 }
 
-function getNews() {
-  return store.readJson(NEWS_FILE, { items: [], fetchedAt: null, isFallback: false, sources: [] });
+export async function getNews() {
+  return requireStore().readJson(NEWS_FILE, { items: [], fetchedAt: null, isFallback: false, sources: [] });
 }
 
-function getAnalysis() {
-  return store.readJson(ANALYSIS_FILE, { enabled: false });
+export async function getAnalysis() {
+  return requireStore().readJson(ANALYSIS_FILE, { enabled: false });
 }
 
-function getConfig() {
+export async function getConfig(apiKey) {
+  const state = await loadState();
   return {
     aiEnabled: state.aiEnabled,
-    hasKey: !!config.deepseek.apiKey,
+    hasKey: !!apiKey,
     lastNewsUpdate: state.lastNewsUpdate,
     lastAnalysisUpdate: state.lastAnalysisUpdate,
     sources: state.sources,
@@ -103,33 +110,11 @@ function getConfig() {
   };
 }
 
-function setAiEnabled(val) {
+export async function setAiEnabled(val, apiKey) {
+  const state = await loadState();
   state.aiEnabled = !!val;
-  persistState();
+  await saveState(state);
   // 异步刷新分析，不阻塞接口返回
-  refreshAnalysis().then(persistState).catch(() => {});
+  await refreshAnalysis(apiKey);
+  await saveState(state);
 }
-
-function init() {
-  loadState();
-  // 启动时立即刷新一次
-  refreshAll().then(persistState).catch(() => {});
-
-  // 定时检查：达到刷新间隔则自动更新（默认每24小时）
-  const intervalMs = Math.max(1, config.refreshHours) * 3600 * 1000;
-  setInterval(() => {
-    const last = state.lastNewsUpdate ? new Date(state.lastNewsUpdate).getTime() : 0;
-    if (Date.now() - last >= intervalMs) {
-      refreshAll().then(persistState).catch(() => {});
-    }
-  }, 60 * 60 * 1000); // 每小时检查一次
-}
-
-module.exports = {
-  init,
-  getNews,
-  getAnalysis,
-  getConfig,
-  setAiEnabled,
-  refreshAll,
-};

@@ -1,10 +1,10 @@
-'use strict';
-
-const config = require('./config');
+import { config } from './config.js';
 
 // 调用 DeepSeek 生成个股分级 + ETF板块建议
-async function generateAnalysis(news) {
-  if (!config.deepseek.apiKey) {
+// apiKey 优先使用显式传入（便于 Cloudflare 通过 env 注入），回退到本地 .env
+export async function generateAnalysis(news, apiKey) {
+  const key = apiKey || config.deepseek.apiKey;
+  if (!key) {
     return { ok: false, reason: 'NO_KEY' };
   }
 
@@ -37,7 +37,7 @@ ${sample}`;
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
-        Authorization: `Bearer ${config.deepseek.apiKey}`,
+        Authorization: `Bearer ${key}`,
       },
       body: JSON.stringify({
         model: config.deepseek.model,
@@ -68,5 +68,3 @@ ${sample}`;
     return { ok: false, reason: 'EXCEPTION', detail: String(e && e.message ? e.message : e) };
   }
 }
-
-module.exports = { generateAnalysis };

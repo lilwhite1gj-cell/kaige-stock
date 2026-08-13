@@ -1,7 +1,5 @@
-'use strict';
-
-const config = require('./config');
-const { categorize } = require('./categorize');
+import { config } from './config.js';
+import { categorize } from './categorize.js';
 
 const UA = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0 Safari/537.36';
 
@@ -167,7 +165,7 @@ function dedupe(items) {
 }
 
 // 主入口：抓取并分类，返回 { items, isFallback, sources, fetchedAt }
-async function fetchAll() {
+export async function fetchAll() {
   const sources = [];
   let items = [];
 
@@ -215,4 +213,4 @@ async function fetchAll() {
   };
 }
 
-module.exports = { fetchAll, fetchSina, fetchEastmoney, fetchCls, fetchCninfo };
+export { fetchSina, fetchEastmoney, fetchCls, fetchCninfo };

@@ -11,13 +11,13 @@
   - 个股投资分级：推荐投资个股 / 少量持有个股 / 高风险个股。
   - 每日 ETF 板块建议：分析当前热门板块与相关 ETF，给出 买入 / 持有 / 回避 建议。
   - 用户可在页面右上角自由开启/关闭 AI 功能。
-- **每日自动更新**：启动即抓取，定时巡检 + 满 24h 自动刷新；前端定时轮询保持同步。
+- **每日自动更新**：Cloudflare 上由 Cron Trigger 每日定时抓取；本地/Node 主机由定时巡检 + 满 24h 自动刷新；前端定时轮询保持同步。
 - **响应式界面**：移动端自适应，新闻区与 AI 区清晰分区。
 - **安全**：外部新闻标题全部 HTML 转义防 XSS；AI 调用在后端完成，API Key 不暴露给前端。
 
 ## 本地运行
 
-零依赖，仅需 Node.js（>=18）。
+零运行时依赖，仅需 Node.js（>=18）。
 
 ```bash
 cd kaige-stock
@@ -34,39 +34,82 @@ node server.js              # 默认监听 http://localhost:3000
 | --- | --- | --- |
 | `DEEPSEEK_API_KEY` | DeepSeek API 密钥，启用 AI 分析需要 | 空 |
 | `PORT` | 服务端口 | `3000` |
-| `DEEPSEEK_BASE_URL` | DeepSeek 兼容接口地址 | `https://api.deepseek.com/v1` |
+| `DEEPSEEK_BASE_URL` | DeepSeek 兼容接口地址 | `https://api.deepseek.com` |
 | `DEEPSEEK_MODEL` | 模型名 | `deepseek-chat` |
 
-## 部署
+## 部署到 Cloudflare（全栈，推荐上云）
 
-项目分两种运行形态：
+本项目已适配 **Cloudflare Workers + KV + Cron Triggers**，可把「每日自动抓取 + AI 分析」完整上云自动运行（不再只是静态快照）。
 
-1. **完整实时版（推荐）**：在任意支持 Node.js 的云主机 / PaaS（Render、Railway、Fly.io、VPS 等）运行 `node server.js`，即具备每日自动抓取、AI 分析与自动更新。注意监听 `process.env.PORT` 并绑定 `0.0.0.0`。
-2. **静态快照版**：CloudStudio 等纯静态托管只提供文件服务，无法运行后端。可先执行 `npm run snapshot` 生成 `public/data-snapshot.json`（最近一次抓取的真实新闻），前端在检测不到后端时会自动加载该快照展示，并标注为「静态快照模式」。
+### 前置
+- 一个 Cloudflare 账号（免费额度即可：Workers 10 万请求/天、KV/Cron 免费）
+- 本地安装 Node.js >=18 与 Wrangler：`npm i -g wrangler`（或每次用 `npx wrangler`）
 
+### 步骤
+1. 登录并创建 KV 命名空间：
+   ```bash
+   wrangler login
+   wrangler kv namespace create NEWS_KV
+   ```
+   复制输出的 `id`，填入 `wrangler.toml` 的 `kv_namespaces[].id`（替换 `REPLACE_WITH_YOUR_KV_ID`）。
+2. （可选）设置 DeepSeek API Key 为 Secret（启用 AI 分析需要）：
+   ```bash
+   wrangler secret put DEEPSEEK_API_KEY
+   ```
+   按提示粘贴密钥。也可在 Cloudflare 控制台 → Workers → kaige-stock → Settings → Variables 中添加 `DEEPSEEK_API_KEY`（类型选 Secret）。
+3. 部署：
+   ```bash
+   wrangler deploy
+   ```
+   完成后返回 `*.workers.dev` 地址，打开即可访问。
+4. 定时任务：Cron（`0 1 * * *`，即北京时间 09:00）已在 `wrangler.toml` 注册，也可在控制台 → Triggers 查看/修改。首次建议手动触发一次刷新：
+   ```bash
+   curl -X POST https://<你的域名>/api/refresh
+   ```
+
+### 本地用 Wrangler 调试
 ```bash
-npm install            # 仅用于读取 scripts（项目本身零运行时依赖）
-npm run snapshot       # 生成 public/data-snapshot.json
+wrangler dev        # 本地启动 Worker + 静态资源，默认 http://localhost:8787
 ```
+本地的 KV / Secret 可通过项目根目录 `.dev.vars` 提供（已 gitignore，切勿提交）：
+```
+DEEPSEEK_API_KEY=你的密钥
+```
+
+### 架构说明
+- 前端静态资源由 `wrangler.toml` 的 `[assets]` 托管，API 由 Worker 处理，同源无需跨域。
+- 新闻与分析存于 KV（`NEWS_KV`），每日 Cron 自动刷新；用户在前端开启「AI 分析」开关会即时触发分析并写入 KV。
+- Cloudflare 边缘节点位于海外，抓取新浪 / 东财 / 财联社 / 巨潮通常比本地沙箱更通畅。
+
+## 其它部署形态
+
+1. **Node 云主机（完整实时版）**：在任意支持 Node.js 的云主机 / PaaS（Render、Railway、Fly.io、VPS 等）运行 `node server.js`，即具备每日自动抓取、AI 分析与自动更新。注意监听 `process.env.PORT` 并绑定 `0.0.0.0`。
+2. **静态快照版**：CloudStudio 等纯静态托管只提供文件服务，无法运行后端。先执行 `npm run snapshot` 生成 `public/data-snapshot.json`（最近一次抓取的真实新闻），前端在检测不到后端时会自动加载该快照展示，并标注为「静态快照模式」。
+   ```bash
+   npm run snapshot       # 生成 public/data-snapshot.json
+   ```
 
 ## 项目结构
 
 ```
-server.js               HTTP 服务与 API 路由
+server.js              本地运行入口（Node HTTP 服务 + API 路由）
 src/
-  config.js             配置（端口、环境变量、目录）
-  store.js              数据读写与落盘
-  categorize.js         新闻板块关键词分类
-  fetchNews.js          多数据源抓取（容错 + 兜底）
-  aiAnalysis.js         DeepSeek 调用（OpenAI 兼容，JSON 输出）
-  scheduler.js          状态管理与定时刷新
-  snapshot.js           生成静态快照（npm run snapshot）
+  worker.js            Cloudflare Worker 入口（API 路由 + Cron 定时抓取）
+  config.js            配置（读取环境变量）
+  kvStore.js           Cloudflare KV 存储实现（Worker 用）
+  fileStore.js         本地文件存储实现（Node 用）
+  categorize.js        新闻板块关键词分类
+  fetchNews.js         多数据源抓取（容错 + 兜底）
+  aiAnalysis.js        DeepSeek 调用（OpenAI 兼容，JSON 输出）
+  scheduler.js         状态管理与刷新（store 由入口注入）
+  snapshot.js          生成静态快照（npm run snapshot）
+wrangler.toml          Cloudflare 部署配置（KV + Cron + 静态资源）
 public/
-  index.html            前端页面
-  styles.css            样式（含响应式与快照横幅）
-  app.js                前端逻辑（含静态快照模式）
-  data-snapshot.json    静态快照数据
-.env.example            环境变量示例
+  index.html           前端页面
+  styles.css           样式（含响应式与快照横幅）
+  app.js               前端逻辑（含静态快照模式）
+  data-snapshot.json   静态快照数据（gitignore）
+.env.example           环境变量示例
 ```
 
 ## API 概览

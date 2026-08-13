@@ -1,11 +1,9 @@
-'use strict';
-
 // 股票板块定义（用于新闻分类与AI分析对齐）
-const SECTORS = [
+export const SECTORS = [
   {
     key: 'tech',
     name: '科技',
-    keywords: ['科技', '芯片', '半导体', '人工智能', 'ai', '软件', '互联网', '5g', '通信', '电子', '华为', '算力', '量子', '机器人', '自动驾驶', '算力', '数据', '云计算'],
+    keywords: ['科技', '芯片', '半导体', '人工智能', 'ai', '软件', '互联网', '5g', '通信', '电子', '华为', '算力', '量子', '机器人', '自动驾驶', '数据', '云计算'],
   },
   {
     key: 'finance',
@@ -39,9 +37,9 @@ const SECTORS = [
   },
 ];
 
-const OTHER = { key: 'other', name: '其他', keywords: [] };
+export const OTHER = { key: 'other', name: '其他', keywords: [] };
 
-function categorize(text) {
+export function categorize(text) {
   const t = (text || '').toLowerCase();
   for (const s of SECTORS) {
     if (s.keywords.some((k) => t.includes(k.toLowerCase()))) {
@@ -51,8 +49,6 @@ function categorize(text) {
   return { key: OTHER.key, name: OTHER.name };
 }
 
-function allSectors() {
+export function allSectors() {
   return [...SECTORS, OTHER];
 }
-
-module.exports = { SECTORS, OTHER, categorize, allSectors };

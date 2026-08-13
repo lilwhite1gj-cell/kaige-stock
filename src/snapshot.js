@@ -1,21 +1,21 @@
-'use strict';
+// 生成静态快照：供 CloudStudio / Cloudflare Pages 等纯静态托管展示真实新闻内容
+import { scheduler } from './scheduler.js';
+import { fileStore } from './fileStore.js';
+import { allSectors } from './categorize.js';
+import fs from 'node:fs';
+import path from 'node:path';
+import { fileURLToPath } from 'node:url';
 
-// 生成静态快照：供 CloudStudio 等纯静态云端部署展示真实新闻内容
-const fs = require('fs');
-const path = require('path');
-const config = require('./config');
-const store = require('./store');
-const fetchNews = require('./fetchNews');
-const { allSectors } = require('./categorize');
+const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
-async function build() {
-  let news = store.readJson('news.json', null);
+async function main() {
+  scheduler.setStore(fileStore);
+  let news = await scheduler.getNews();
   if (!news || !news.items || !news.items.length) {
-    const r = await fetchNews.fetchAll();
-    news = { items: r.items, fetchedAt: r.fetchedAt, isFallback: r.isFallback, sources: r.sources };
-    store.writeJson('news.json', news);
+    await scheduler.refreshNews();
+    news = await scheduler.getNews();
   }
-  const analysis = store.readJson('analysis.json', { enabled: false, snapshotNote: true });
+  const analysis = await scheduler.getAnalysis();
 
   const snapshot = {
     isSnapshot: true,
@@ -24,14 +24,14 @@ async function build() {
     analysis,
   };
 
-  const outDir = config.publicDir;
+  const outDir = path.join(__dirname, '..', 'public');
   if (!fs.existsSync(outDir)) fs.mkdirSync(outDir, { recursive: true });
   const outPath = path.join(outDir, 'data-snapshot.json');
   fs.writeFileSync(outPath, JSON.stringify(snapshot), 'utf8');
   console.log('快照已生成:', outPath, '| 新闻条数:', news.items.length, '| 来源:', (news.sources || []).join('/'));
 }
 
-build().catch((e) => {
+main().catch((e) => {
   console.error('快照生成失败:', e);
   process.exit(1);
 });
