@@ -6,6 +6,8 @@ const state = {
   activeSector: 'all',
   aiEnabled: false,
   hasKey: false,
+  page: 1,
+  pageSize: 10,
 };
 
 function esc(s) {
@@ -44,6 +46,7 @@ function renderSectorTabs() {
   tabs.querySelectorAll('.chip').forEach((c) => {
     c.addEventListener('click', () => {
       state.activeSector = c.dataset.key;
+      state.page = 1;
       renderSectorTabs();
       renderNews();
     });
@@ -56,16 +59,27 @@ function renderNews() {
   if (state.activeSector !== 'all') {
     items = items.filter((n) => n.sectorKey === state.activeSector);
   }
-  if (!items.length) {
+  const total = items.length;
+  const pageSize = state.pageSize;
+  const totalPages = Math.max(1, Math.ceil(total / pageSize));
+  if (state.page > totalPages) state.page = totalPages;
+  if (state.page < 1) state.page = 1;
+
+  if (!total) {
     list.innerHTML = '<div class="placeholder">该板块暂无相关新闻</div>';
+    renderPager(0, 0);
     return;
   }
-  list.innerHTML = items
-    .map((n) => {
-      const titleHtml = n.url
-        ? `<a href="${esc(n.url)}" target="_blank" rel="noopener">${esc(n.title)}</a>`
-        : esc(n.title);
-      return `<div class="news-card">
+  const start = (state.page - 1) * pageSize;
+  const pageItems = items.slice(start, start + pageSize);
+
+  list.innerHTML =
+    pageItems
+      .map((n) => {
+        const titleHtml = n.url
+          ? `<a href="${esc(n.url)}" target="_blank" rel="noopener">${esc(n.title)}</a>`
+          : esc(n.title);
+        return `<div class="news-card">
         <p class="news-title">${titleHtml}</p>
         <p class="news-intro">${esc(n.intro || '')}</p>
         <div class="news-foot">
@@ -74,8 +88,61 @@ function renderNews() {
           <span>🕒 ${esc(fmtTime(n.time))}</span>
         </div>
       </div>`;
-    })
-    .join('');
+      })
+      .join('') || '<div class="placeholder">该板块暂无相关新闻</div>';
+
+  renderPager(total, totalPages);
+}
+
+function renderPager(total, totalPages) {
+  const pager = document.getElementById('newsPager');
+  if (!pager) return;
+  if (total === 0 || totalPages <= 1) {
+    pager.innerHTML = '';
+    return;
+  }
+  const page = state.page;
+  const maxBtns = 7;
+  let from = Math.max(1, page - 3);
+  let to = Math.min(totalPages, from + maxBtns - 1);
+  from = Math.max(1, to - maxBtns + 1);
+  let nums = '';
+  for (let i = from; i <= to; i++) {
+    nums += `<button class="pg-num ${i === page ? 'active' : ''}" data-pg="${i}">${i}</button>`;
+  }
+  pager.innerHTML = `
+    <button class="pg-btn" data-pg="prev" ${page <= 1 ? 'disabled' : ''}>‹ 上一页</button>
+    <span class="pg-nums">${nums}</span>
+    <button class="pg-btn" data-pg="next" ${page >= totalPages ? 'disabled' : ''}>下一页 ›</button>
+    <span class="pg-info">第 ${page} / ${totalPages} 页 · 共 ${total} 条</span>
+    <label class="pg-size-wrap">每页
+      <select class="pg-size" id="pgSize">
+        <option value="10" ${state.pageSize === 10 ? 'selected' : ''}>10</option>
+        <option value="20" ${state.pageSize === 20 ? 'selected' : ''}>20</option>
+        <option value="30" ${state.pageSize === 30 ? 'selected' : ''}>30</option>
+        <option value="50" ${state.pageSize === 50 ? 'selected' : ''}>50</option>
+      </select> 条
+    </label>
+  `;
+  pager.querySelectorAll('[data-pg]').forEach((b) => {
+    b.addEventListener('click', () => {
+      const v = b.dataset.pg;
+      if (v === 'prev') state.page = Math.max(1, state.page - 1);
+      else if (v === 'next') state.page = Math.min(totalPages, state.page + 1);
+      else state.page = parseInt(v, 10);
+      renderNews();
+      window.scrollTo({ top: 0, behavior: 'smooth' });
+    });
+  });
+  const sizeSel = document.getElementById('pgSize');
+  if (sizeSel) {
+    sizeSel.addEventListener('change', () => {
+      state.pageSize = parseInt(sizeSel.value, 10);
+      state.page = 1;
+      renderNews();
+      window.scrollTo({ top: 0, behavior: 'smooth' });
+    });
+  }
 }
 
 // ===== AI 分析 =====
@@ -195,6 +262,7 @@ async function loadNews() {
   const d = await api('/api/news');
   state.sectors = d.sectors || [];
   state.news = d.items || [];
+  state.page = 1;
   renderSectorTabs();
   renderNews();
 }
@@ -209,6 +277,7 @@ async function loadSnapshot() {
   if (!d || !d.news) throw new Error('未找到数据快照');
   state.sectors = d.news.sectors || [];
   state.news = d.news.items || [];
+  state.page = 1;
   state.aiEnabled = false;
   state.staticMode = true;
   showSnapshotBanner();

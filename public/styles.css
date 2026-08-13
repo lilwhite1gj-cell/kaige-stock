@@ -174,6 +174,23 @@ body {
   background: var(--brand-soft); color: var(--brand); font-size: 12px;
 }
 
+/* 分页 */
+.pager {
+  display: flex; align-items: center; justify-content: center; flex-wrap: wrap;
+  gap: 10px; margin-top: 18px; padding-top: 16px; border-top: 1px solid var(--border);
+}
+.pg-btn, .pg-num {
+  border: 1px solid var(--border); background: #fff; color: var(--text);
+  padding: 6px 12px; border-radius: 9px; font-size: 13px; cursor: pointer; transition: .15s;
+}
+.pg-btn:hover:not(:disabled), .pg-num:hover { border-color: var(--brand); color: var(--brand); }
+.pg-btn:disabled { opacity: .45; cursor: not-allowed; }
+.pg-num.active { background: var(--brand); border-color: var(--brand); color: #fff; }
+.pg-nums { display: inline-flex; gap: 6px; }
+.pg-info { font-size: 12px; color: var(--muted); }
+.pg-size-wrap { font-size: 12px; color: var(--muted); display: inline-flex; align-items: center; gap: 4px; }
+.pg-size { border: 1px solid var(--border); border-radius: 8px; padding: 4px 6px; font-size: 12px; color: var(--text); background: #fff; }
+
 /* AI 区块 */
 .grade-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 14px; margin-bottom: 22px; }
 .grade-col {
