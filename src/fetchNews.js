@@ -241,15 +241,112 @@ async function fetchMarketWatch(signal) {
   return parseRss(xml, 'MarketWatch', config.newsLimit);
 }
 
+// ---------- 新增：A股/综合源（同花顺、金十） ----------
+
+// 同花顺 7x24 快讯（综合 / A股 / 港股）
+async function fetchThs(signal) {
+  const url =
+    'https://news.10jqka.com.cn/tapp/news/push/stock/?type=stock&num=' +
+    config.newsLimit +
+    '&pagesize=' +
+    config.newsLimit +
+    '&page=1&last_time=0&r=0';
+  const res = await fetch(url, {
+    headers: {
+      'User-Agent': UA,
+      Referer: 'https://news.10jqka.com.cn/',
+      Accept: 'application/json, text/plain, */*',
+    },
+    signal,
+  });
+  if (!res.ok) throw new Error('ths http ' + res.status);
+  const json = await res.json();
+  // 兼容多种返回结构
+  let list = [];
+  if (json && json.data) {
+    if (Array.isArray(json.data)) list = json.data;
+    else if (Array.isArray(json.data.list)) list = json.data.list;
+    else if (Array.isArray(json.data.items)) list = json.data.items;
+  } else if (Array.isArray(json)) {
+    list = json;
+  }
+  if (!list.length) throw new Error('ths 空数据');
+  return list
+    .slice(0, config.newsLimit)
+    .map((it) => {
+      const ts = parseInt(it.datetime || it.time || it.date, 10);
+      const title = String(it.title || it.content || it.digest || '').trim();
+      const content = String(it.content || it.summary || it.digest || '').trim();
+      return {
+        id: String(it.id || it.news_id || title),
+        title,
+        url: it.url || it.link || '',
+        time: ts ? new Date(ts * 1000).toISOString() : new Date().toISOString(),
+        source: '同花顺',
+        intro: content && content !== title ? content : '',
+      };
+    })
+    .filter((it) => it.title);
+}
+
+// 金十数据 快讯（综合 / A股）
+async function fetchJin10(signal) {
+  const url = 'https://www.jin10.com/flash_newest.js';
+  const res = await fetch(url, {
+    headers: { 'User-Agent': UA, Referer: 'https://www.jin10.com/', Accept: '*/*' },
+    signal,
+  });
+  if (!res.ok) throw new Error('jin10 http ' + res.status);
+  const text = await res.text();
+  // 返回 JSONP：flashNewestCallback([...])
+  const m = /flashNewestCallback\(\s*(\[[\s\S]*\])\s*\)/i.exec(text);
+  if (!m) throw new Error('jin10 非预期格式');
+  const arr = JSON.parse(m[1]);
+  if (!Array.isArray(arr) || !arr.length) throw new Error('jin10 空数据');
+  return arr
+    .slice(0, config.newsLimit)
+    .map((it) => {
+      const title = String(it.title || it.content || '').trim();
+      const content = String(it.content || it.summary || '').trim();
+      return {
+        id: String(it.id || it.nid || title),
+        title,
+        url: it.url || '',
+        time: it.time
+          ? new Date(String(it.time).replace(/-/g, '/')).toISOString()
+          : new Date().toISOString(),
+        source: '金十数据',
+        intro: content && content !== title ? content : '',
+      };
+    })
+    .filter((it) => it.title);
+}
+
+// ---------- 新增：国际/美股友好源（华尔街见闻 RSS） ----------
+
+// 华尔街见闻 RSS（综合 / 美股 / 港股），海外节点可达性较好
+async function fetchWallstreet(signal) {
+  const res = await fetch('https://wallstreetcn.com/rss/news', {
+    headers: { 'User-Agent': UA, Accept: 'application/rss+xml, application/xml, text/xml' },
+    signal,
+  });
+  if (!res.ok) throw new Error('wallstreetcn http ' + res.status);
+  const xml = await res.text();
+  return parseRss(xml, '华尔街见闻', config.newsLimit);
+}
+
 // ---------- 数据源注册表（按市场标签归类） ----------
 export const SOURCES = [
   { id: 'sina', name: '新浪财经', markets: ['综合', 'A股', '港股'], fetch: fetchSina },
   { id: 'eastmoney', name: '东方财富', markets: ['综合', 'A股', '港股'], fetch: fetchEastmoney },
   { id: 'cls', name: '财联社', markets: ['综合', 'A股', '港股'], fetch: fetchCls },
-  { id: 'cninfo', name: '巨潮资讯', markets: ['A股'], fetch: fetchCninfo },
+  { id: 'cninfo', name: '巨潮(巨浪)资讯', markets: ['A股'], fetch: fetchCninfo },
   { id: 'sinahk', name: '新浪港股', markets: ['港股'], fetch: fetchSinaHK },
   { id: 'yahoo', name: 'Yahoo美股', markets: ['美股'], fetch: fetchYahooUS },
   { id: 'marketwatch', name: 'MarketWatch', markets: ['美股'], fetch: fetchMarketWatch },
+  { id: 'ths', name: '同花顺', markets: ['综合', 'A股', '港股'], fetch: fetchThs },
+  { id: 'jin10', name: '金十数据', markets: ['综合', 'A股'], fetch: fetchJin10 },
+  { id: 'wallstreet', name: '华尔街见闻', markets: ['综合', '美股', '港股'], fetch: fetchWallstreet },
 ];
 
 // 兜底示例数据：当所有实时源都不可用时，保证页面有内容
@@ -356,4 +453,4 @@ export async function fetchAll() {
   };
 }
 
-export { fetchSina, fetchEastmoney, fetchCls, fetchCninfo, fetchSinaHK, fetchYahooUS, fetchMarketWatch };
+export { fetchSina, fetchEastmoney, fetchCls, fetchCninfo, fetchSinaHK, fetchYahooUS, fetchMarketWatch, fetchThs, fetchJin10, fetchWallstreet };
