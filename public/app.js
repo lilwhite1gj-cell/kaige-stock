@@ -37,10 +37,16 @@ function esc(s) {
 
 function fmtTime(iso) {
   if (!iso) return '';
-  const d = new Date(iso);
+  // 后端统一返回北京时间字符串 YYYY-MM-DD HH:mm:ss，直接截取显示，避免浏览器时区差异
+  const s = String(iso).trim();
+  const m = s.match(/^(\d{4}-\d{2}-\d{2})[T ](\d{2}:\d{2})/);
+  if (m) return `${m[1]} ${m[2]}`;
+  // 兜底：兼容旧的 ISO 时间
+  const d = new Date(s);
   if (isNaN(d)) return '';
   const p = (n) => String(n).padStart(2, '0');
-  return `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())} ${p(d.getHours())}:${p(d.getMinutes())}`;
+  const bj = new Date(d.getTime() + 8 * 60 * 60 * 1000);
+  return `${bj.getUTCFullYear()}-${p(bj.getUTCMonth() + 1)}-${p(bj.getUTCDate())} ${p(bj.getUTCHours())}:${p(bj.getUTCMinutes())}`;
 }
 
 async function api(path, opts) {

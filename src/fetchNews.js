@@ -56,6 +56,55 @@ function extractJsArray(text, varName) {
   return null;
 }
 
+// ---------- 时间统一处理：全部按北京时间展示，用 UTC 时间戳排序 ----------
+function pad(n) {
+  return String(n).padStart(2, '0');
+}
+
+// 把任意时间输入解析为 UTC 时间戳（毫秒）
+// 无显式时区的 `YYYY-MM-DD HH:mm:ss` 一律视为北京时间
+function parseTime(input) {
+  if (input == null || input === '') return null;
+
+  // 纯数字：Unix 秒或毫秒
+  const num = Number(input);
+  if (!isNaN(num) && String(input).trim() === String(num)) {
+    // 10 位 = 秒，13 位 = 毫秒
+    return num < 1e12 ? num * 1000 : num;
+  }
+
+  const str = String(input).trim();
+
+  // 无显式时区的北京时间格式：YYYY-MM-DD HH:mm:ss（ Investing/金十 常用）
+  const bj = str.match(/^(\d{4})-(\d{2})-(\d{2})[T ](\d{2}):(\d{2}):(\d{2})(?:\.\d+)?$/);
+  if (bj) {
+    const [, y, mo, d, h, mi, s] = bj.map(Number);
+    // 北京时间转 UTC：减 8 小时
+    return Date.UTC(y, mo - 1, d, h - 8, mi, s);
+  }
+
+  // 带时区的标准格式（RFC 822 / ISO / GMT 等）
+  const ts = Date.parse(str);
+  if (!isNaN(ts)) return ts;
+
+  return null;
+}
+
+// 把 UTC 时间戳转为北京时间字符串 YYYY-MM-DD HH:mm:ss
+function toBeijingString(ts) {
+  const d = new Date(ts);
+  const bj = new Date(d.getTime() + 8 * 60 * 60 * 1000);
+  return `${bj.getUTCFullYear()}-${pad(bj.getUTCMonth() + 1)}-${pad(bj.getUTCDate())} ${pad(bj.getUTCHours())}:${pad(bj.getUTCMinutes())}:${pad(bj.getUTCSeconds())}`;
+}
+
+// 统一生成时间字段：ts(UTC ms) 用于排序，time(北京时间) 用于展示
+function makeTime(raw) {
+  const ts = parseTime(raw);
+  if (ts) return { ts, time: toBeijingString(ts) };
+  const now = Date.now();
+  return { ts: now, time: toBeijingString(now) };
+}
+
 // ---------- 现有综合财经源（覆盖 A股 / 港股内容） ----------
 
 // 新浪财经 滚动新闻
@@ -74,12 +123,13 @@ async function fetchSina(signal) {
       const list = (json && json.result && json.result.data) || [];
       if (!list.length) continue;
       return list.map((it) => {
-        const ctime = parseInt(it.ctime, 10);
+        const t = makeTime(it.ctime);
         return {
           id: String(it.id || it.url || it.title),
           title: String(it.title || '').trim(),
           url: it.url || '',
-          time: ctime ? new Date(ctime * 1000).toISOString() : new Date().toISOString(),
+          ts: t.ts,
+          time: t.time,
           source: it.media || '新浪财经',
           intro: String(it.intro || it.summary || '').trim(),
         };
@@ -104,12 +154,13 @@ async function fetchEastmoney(signal) {
   const list = (json && json.data && json.data.list) || [];
   if (!list.length) throw new Error('eastmoney 空数据');
   return list.map((it) => {
-    const ts = parseInt(it.datetime || it.time, 10);
+    const t = makeTime(it.datetime || it.time);
     return {
       id: String(it.id || it.unique_id || it.title),
       title: String(it.title || '').trim(),
       url: it.url || (it.id ? `https://kuaixun.eastmoney.com/${it.id}` : ''),
-      time: ts ? new Date(ts * 1000).toISOString() : new Date().toISOString(),
+      ts: t.ts,
+      time: t.time,
       source: '东方财富',
       intro: String(it.content || it.summary || '').trim(),
     };
@@ -130,12 +181,13 @@ async function fetchCls(signal) {
   if (Array.isArray(json && json.data)) list = json.data;
   if (!Array.isArray(list) || !list.length) throw new Error('cls 空数据');
   return list.slice(0, config.newsLimit).map((it) => {
-    const ts = parseInt(it.datetime || it.time, 10);
+    const t = makeTime(it.datetime || it.time);
     return {
       id: String(it.id || it.title),
       title: String(it.title || '').trim(),
       url: it.url || (it.id ? `https://www.cls.cn/${it.id}` : ''),
-      time: ts ? new Date(ts * 1000).toISOString() : new Date().toISOString(),
+      ts: t.ts,
+      time: t.time,
       source: '财联社',
       intro: String(it.content || it.summary || '').trim(),
     };
@@ -170,14 +222,18 @@ async function fetchCninfo(signal) {
   const json = await res.json();
   const list = (json && json.announcements) || [];
   if (!list.length) throw new Error('cninfo 空数据');
-  return list.map((it) => ({
-    id: String(it.announcementId || it.announcementTitle),
-    title: String(it.announcementTitle || '').trim(),
-    url: 'https://www.cninfo.com.cn/new/disclosure/detail?announcementId=' + (it.announcementId || ''),
-    time: it.announcementTime ? new Date(it.announcementTime.replace(/-/g, '/')).toISOString() : new Date().toISOString(),
-    source: '巨潮资讯',
-    intro: '证券代码：' + (it.stockCode || '-') + ' ' + (it.stockShortName || ''),
-  }));
+  return list.map((it) => {
+    const t = makeTime(it.announcementTime);
+    return {
+      id: String(it.announcementId || it.announcementTitle),
+      title: String(it.announcementTitle || '').trim(),
+      url: 'https://www.cninfo.com.cn/new/disclosure/detail?announcementId=' + (it.announcementId || ''),
+      ts: t.ts,
+      time: t.time,
+      source: '巨潮(巨浪)资讯',
+      intro: '证券代码：' + (it.stockCode || '-') + ' ' + (it.stockShortName || ''),
+    };
+  });
 }
 
 // ---------- 新增：港股数据源 ----------
@@ -198,12 +254,13 @@ async function fetchSinaHK(signal) {
       const list = (json && json.result && json.result.data) || [];
       if (!list.length) continue;
       return list.map((it) => {
-        const ctime = parseInt(it.ctime, 10);
+        const t = makeTime(it.ctime);
         return {
           id: String(it.id || it.url || it.title),
           title: String(it.title || '').trim(),
           url: it.url || '',
-          time: ctime ? new Date(ctime * 1000).toISOString() : new Date().toISOString(),
+          ts: t.ts,
+          time: t.time,
           source: '新浪港股',
           intro: String(it.intro || it.summary || '').trim(),
         };
@@ -232,12 +289,13 @@ function parseRss(xml, sourceName, limit) {
       const link = tag('link');
       const pub = tag('pubDate');
       const desc = tag('description').replace(/<[^>]+>/g, '').slice(0, 220);
-      const ts = pub ? Date.parse(pub) : NaN;
+      const t = makeTime(pub);
       return {
         id: link || title,
         title,
         url: link,
-        time: isNaN(ts) ? new Date().toISOString() : new Date(ts).toISOString(),
+        ts: t.ts,
+        time: t.time,
         source: sourceName,
         intro: desc,
       };
@@ -258,15 +316,26 @@ async function fetchYahooUS(signal) {
   return parseRss(xml, 'Yahoo Finance', config.newsLimit);
 }
 
-// MarketWatch 美股 RSS（冗余备份，提升可达性）
-async function fetchMarketWatch(signal) {
-  const res = await fetch('https://www.marketwatch.com/rss/topstories', {
+// Investing.com 市场快讯（美股 / 港股），海外节点可达性较好
+async function fetchInvesting(signal) {
+  const res = await fetch('https://www.investing.com/rss/news_25.rss', {
     headers: { 'User-Agent': UA, Accept: 'application/rss+xml, application/xml, text/xml' },
     signal,
   });
-  if (!res.ok) throw new Error('marketwatch http ' + res.status);
+  if (!res.ok) throw new Error('investing http ' + res.status);
   const xml = await res.text();
-  return parseRss(xml, 'MarketWatch', config.newsLimit);
+  return parseRss(xml, 'Investing.com', config.newsLimit);
+}
+
+// CNBC 美股 Top News（冗余备份，提升海外可达性）
+async function fetchCnbc(signal) {
+  const res = await fetch(
+    'https://search.cnbc.com/rs/search/combinedcms/view.xml?partnerId=wrss01&id=100003114',
+    { headers: { 'User-Agent': UA, Accept: 'application/rss+xml, application/xml, text/xml' }, signal }
+  );
+  if (!res.ok) throw new Error('cnbc http ' + res.status);
+  const xml = await res.text();
+  return parseRss(xml, 'CNBC', config.newsLimit);
 }
 
 // ---------- 新增：A股/综合源（同花顺、金十） ----------
@@ -302,14 +371,15 @@ async function fetchThs(signal) {
   return list
     .slice(0, config.newsLimit)
     .map((it) => {
-      const ts = parseInt(it.datetime || it.time || it.date, 10);
+      const t = makeTime(it.ctime || it.rtime || it.datetime || it.time || it.date);
       const title = String(it.title || it.content || it.digest || '').trim();
       const content = String(it.content || it.summary || it.digest || '').trim();
       return {
         id: String(it.id || it.news_id || title),
         title,
         url: it.url || it.link || '',
-        time: ts ? new Date(ts * 1000).toISOString() : new Date().toISOString(),
+        ts: t.ts,
+        time: t.time,
         source: '同花顺',
         intro: content && content !== title ? content : '',
       };
@@ -342,42 +412,18 @@ async function fetchJin10(signal) {
       const d = it.data || {};
       const title = String(d.title || d.content || '').trim();
       const content = String(d.content || d.title || '').trim();
+      const t = makeTime(it.time);
       return {
         id: String(it.id || title),
         title,
         url: d.source_link || '',
-        time: it.time
-          ? new Date(String(it.time).replace(/-/g, '/')).toISOString()
-          : new Date().toISOString(),
+        ts: t.ts,
+        time: t.time,
         source: '金十数据',
         intro: content && content !== title ? content : '',
       };
     })
     .filter((it) => it.title);
-}
-
-// ---------- 新增：国际/美股友好源（RSS，海外节点可达） ----------
-
-// Investing.com 市场快讯（美股 / 港股），海外节点可达性较好
-async function fetchInvesting(signal) {
-  const res = await fetch('https://www.investing.com/rss/news_25.rss', {
-    headers: { 'User-Agent': UA, Accept: 'application/rss+xml, application/xml, text/xml' },
-    signal,
-  });
-  if (!res.ok) throw new Error('investing http ' + res.status);
-  const xml = await res.text();
-  return parseRss(xml, 'Investing.com', config.newsLimit);
-}
-
-// CNBC 美股 Top News（冗余备份，提升海外可达性）
-async function fetchCnbc(signal) {
-  const res = await fetch(
-    'https://search.cnbc.com/rs/search/combinedcms/view.xml?partnerId=wrss01&id=100003114',
-    { headers: { 'User-Agent': UA, Accept: 'application/rss+xml, application/xml, text/xml' }, signal }
-  );
-  if (!res.ok) throw new Error('cnbc http ' + res.status);
-  const xml = await res.text();
-  return parseRss(xml, 'CNBC', config.newsLimit);
 }
 
 // ---------- 数据源注册表（按市场标签归类） ----------
@@ -387,12 +433,11 @@ export const SOURCES = [
   { id: 'cls', name: '财联社', markets: ['综合', 'A股', '港股'], fetch: fetchCls },
   { id: 'cninfo', name: '巨潮(巨浪)资讯', markets: ['A股'], fetch: fetchCninfo },
   { id: 'sinahk', name: '新浪港股', markets: ['港股'], fetch: fetchSinaHK },
-  { id: 'yahoo', name: 'Yahoo美股', markets: ['美股'], fetch: fetchYahooUS },
-  { id: 'marketwatch', name: 'MarketWatch', markets: ['美股'], fetch: fetchMarketWatch },
-  { id: 'ths', name: '同花顺', markets: ['综合', 'A股', '港股'], fetch: fetchThs },
-  { id: 'jin10', name: '金十数据', markets: ['综合', 'A股'], fetch: fetchJin10 },
+  { id: 'yahoo', name: 'Yahoo Finance', markets: ['美股'], fetch: fetchYahooUS },
   { id: 'investing', name: 'Investing.com', markets: ['综合', '美股', '港股'], fetch: fetchInvesting },
   { id: 'cnbc', name: 'CNBC', markets: ['美股'], fetch: fetchCnbc },
+  { id: 'ths', name: '同花顺', markets: ['综合', 'A股', '港股'], fetch: fetchThs },
+  { id: 'jin10', name: '金十数据', markets: ['综合', 'A股'], fetch: fetchJin10 },
 ];
 
 // 兜底示例数据：当所有实时源都不可用时，保证页面有内容
@@ -411,7 +456,8 @@ function fallbackItems() {
     id: 'fallback-' + i,
     title: b[1],
     url: '',
-    time: new Date(now - i * 3600 * 1000).toISOString(),
+    ts: now - i * 3600 * 1000,
+    time: toBeijingString(now - i * 3600 * 1000),
     source: b[3],
     intro: b[2],
   }));
@@ -425,6 +471,26 @@ function dedupe(items) {
     if (!key || seen.has(key)) continue;
     seen.add(key);
     out.push(it);
+  }
+  return out;
+}
+
+// 轻量打散：当同一来源连续出现超过阈值时，把后续条目往后挪，让其它源有机会插在前面
+function interleaveBySource(items, maxSameSource = 3) {
+  if (!items.length) return items;
+  const out = [items[0]];
+  const pending = items.slice(1);
+  while (pending.length) {
+    const lastSrc = out[out.length - 1].source || '其他';
+    const sameStreak = out.slice(-maxSameSource).every((x) => (x.source || '其他') === lastSrc);
+
+    // 找下一个可用的不同源条目；如果不需要打散或找不到，就取队首
+    let idx = 0;
+    if (sameStreak) {
+      const alt = pending.findIndex((x) => (x.source || '其他') !== lastSrc);
+      if (alt >= 0) idx = alt;
+    }
+    out.push(pending.splice(idx, 1)[0]);
   }
   return out;
 }
@@ -506,8 +572,11 @@ export async function fetchAll() {
       const sec = categorize(it.title + ' ' + it.intro);
       return { ...it, sectorKey: sec.key, sectorName: sec.name };
     })
-    .sort((a, b) => new Date(b.time) - new Date(a.time))
+    .sort((a, b) => b.ts - a.ts)
     .slice(0, config.newsLimit);
+
+  // 在严格时序排序基础上，轻微打散同一源连续扎堆（最多连续 3 条）
+  items = interleaveBySource(items, 3);
 
   return {
     items,
@@ -518,4 +587,15 @@ export async function fetchAll() {
   };
 }
 
-export { fetchSina, fetchEastmoney, fetchCls, fetchCninfo, fetchSinaHK, fetchYahooUS, fetchMarketWatch, fetchThs, fetchJin10, fetchInvesting, fetchCnbc };
+export {
+  fetchSina,
+  fetchEastmoney,
+  fetchCls,
+  fetchCninfo,
+  fetchSinaHK,
+  fetchYahooUS,
+  fetchInvesting,
+  fetchCnbc,
+  fetchThs,
+  fetchJin10,
+};
