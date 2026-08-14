@@ -44,6 +44,7 @@ export async function refreshNews() {
     fetchedAt: result.fetchedAt,
     isFallback: result.isFallback,
     sources: result.sources,
+    diagnostics: result.diagnostics || [],
   });
   return result;
 }
@@ -75,10 +76,11 @@ export async function refreshAnalysis(apiKey) {
 export async function refreshAll(apiKey) {
   const state = await loadState();
   try {
-    const r = await refreshNews();
-    state.lastNewsUpdate = r.fetchedAt;
-    state.sources = r.sources;
-    state.isFallback = r.isFallback;
+  const r = await refreshNews();
+  state.lastNewsUpdate = r.fetchedAt;
+  state.sources = r.sources;
+  state.sourceDiagnostics = r.diagnostics || [];
+  state.isFallback = r.isFallback;
     await refreshAnalysis(apiKey);
     state.lastAnalysisUpdate = new Date().toISOString();
     state.lastError = null;
@@ -105,6 +107,7 @@ export async function getConfig(apiKey) {
     lastNewsUpdate: state.lastNewsUpdate,
     lastAnalysisUpdate: state.lastAnalysisUpdate,
     sources: state.sources,
+    sourceDiagnostics: state.sourceDiagnostics || [],
     isFallback: state.isFallback,
     lastError: state.lastError,
     model: config.deepseek.model,

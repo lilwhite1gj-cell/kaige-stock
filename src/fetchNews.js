@@ -383,13 +383,13 @@ function dedupe(items) {
   return out;
 }
 
-// 主入口：抓取并分类，返回 { items, isFallback, sources, fetchedAt }
+// 主入口：抓取并分类，返回 { items, isFallback, sources, fetchedAt, diagnostics }
 export async function fetchAll() {
   const ds = config.dataSources || {};
   const enabledMarkets = ds.markets || [];
   const strategy = ds.strategy || 'merge';
-  const retries = ds.retries ?? 2;
-  const timeoutMs = ds.timeoutMs ?? 15000;
+  const retries = ds.retries ?? 1;
+  const timeoutMs = ds.timeoutMs ?? 10000;
 
   // 市场筛选：未指定市场 = 启用全部；否则只启用 markets 覆盖的源
   const active = SOURCES.filter(
@@ -397,34 +397,52 @@ export async function fetchAll() {
   );
 
   const sources = [];
+  const diagnostics = [];
   let items = [];
 
-  if (strategy === 'priority') {
-    // 单源切换：按顺序取第一个成功的源，其余跳过
-    for (const s of active) {
+  // 并发抓取所有启用源：总耗时≈最慢单源，避免顺序累加超时（海外节点/Render 休眠场景尤其重要）
+  const settled = await Promise.allSettled(
+    active.map(async (s) => {
+      const t0 = Date.now();
       try {
         const got = await withRetry(s.name, (signal) => s.fetch(signal), retries, timeoutMs);
-        if (got && got.length) {
-          items = got;
-          sources.push(s.name);
-          break;
-        }
-      } catch (_) {
-        // 忽略单源失败，尝试下一个
+        return { s, got, ms: Date.now() - t0, err: null };
+      } catch (e) {
+        return { s, got: null, ms: Date.now() - t0, err: e };
       }
+    })
+  );
+
+  for (const r of settled) {
+    const { s, got, ms, err } =
+      r.status === 'fulfilled'
+        ? r.value
+        : { s: null, got: null, ms: 0, err: new Error('未知错误') };
+    if (!s) continue;
+
+    if (err || !got || !got.length) {
+      diagnostics.push({
+        source: s.name,
+        status: 'fail',
+        count: 0,
+        ms,
+        error: String((err && err.message) || err),
+      });
+      continue;
     }
-  } else {
-    // 合并：所有启用源的结果汇总
-    for (const s of active) {
-      try {
-        const got = await withRetry(s.name, (signal) => s.fetch(signal), retries, timeoutMs);
-        if (got && got.length) {
-          items = items.concat(got);
-          sources.push(s.name);
-        }
-      } catch (_) {
-        // 单源失败忽略，不影响其它源
+
+    diagnostics.push({ source: s.name, status: 'ok', count: got.length, ms });
+
+    if (strategy === 'priority') {
+      // 单源切换：只取第一个成功的源，其余忽略
+      if (!items.length) {
+        items = got;
+        sources.push(s.name);
       }
+    } else {
+      // 合并：所有成功源的结果汇总
+      items = items.concat(got);
+      sources.push(s.name);
     }
   }
 
@@ -450,6 +468,7 @@ export async function fetchAll() {
     isFallback,
     sources,
     fetchedAt: new Date().toISOString(),
+    diagnostics,
   };
 }
 

@@ -15,9 +15,9 @@ export const config = {
     markets: [],
     // 'merge' = 合并所有启用源；'priority' = 仅取第一个成功的源（用于「单源切换」）
     strategy: 'merge',
-    // 每个数据源请求失败时的重试次数
-    retries: 2,
-    // 单次请求超时（毫秒）
-    timeoutMs: 15000,
+    // 每个数据源请求失败时的重试次数（海外节点被墙源快速失败更友好，默认 1）
+    retries: parseInt(process.env.DS_RETRIES || '1', 10),
+    // 单次请求超时（毫秒），默认 10s
+    timeoutMs: parseInt(process.env.DS_TIMEOUT_MS || '10000', 10),
   },
 };
