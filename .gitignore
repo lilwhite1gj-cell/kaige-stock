@@ -8,6 +8,8 @@ server.log
 data/news.json
 data/analysis.json
 data/state.json
+data/quotes.json
+data/recommendations.json
 
 # 静态快照（由 `npm run snapshot` 生成，属构建产物）
 public/data-snapshot.json

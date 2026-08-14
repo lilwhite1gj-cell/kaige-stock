@@ -10,6 +10,9 @@ const state = {
   pageSize: 10,
   analysis: null,
   selectedMarkets: [],
+  reco: null,
+  liveQuotes: null,
+  lastRecoUpdate: null,
 };
 
 const MARKET_OPTIONS = ['A股', '港股', '美股', '其他'];
@@ -298,6 +301,154 @@ function renderAnalysis(a) {
   }
 }
 
+// ===== 综合荐股（新闻 × 行情） =====
+function signClass(v) {
+  if (v == null) return 'flat';
+  if (v > 0) return 'up'; // 涨 = 红（A股习惯）
+  if (v < 0) return 'down'; // 跌 = 绿
+  return 'flat';
+}
+function fmtPct(v) {
+  if (v == null) return '—';
+  return (v > 0 ? '+' : '') + v + '%';
+}
+function fmtYi(v) {
+  if (v == null) return '—';
+  const s = (v > 0 ? '+' : '') + v + '亿';
+  return s;
+}
+function actionClass(a) {
+  if (a === '买入') return 'badge-buy';
+  if (a === '持有') return 'badge-hold';
+  return 'badge-sell';
+}
+function signalTag(label, val) {
+  if (!val) return '';
+  const cls =
+    val === '正面' || val === '强势'
+      ? 'sig-up'
+      : val === '负面' || val === '弱势'
+        ? 'sig-down'
+        : 'sig-mid';
+  return `<span class="sig ${cls}">${esc(label)}：${esc(val)}</span>`;
+}
+
+function renderRecoCombined() {
+  const a = state.reco;
+  const box = document.getElementById('recoList');
+  const sentimentEl = document.getElementById('marketSentiment');
+  const chipsEl = document.getElementById('indexChips');
+  if (!box) return;
+
+  // 大盘研判
+  if (a && a.market && a.market.sentiment) {
+    const sc =
+      a.market.sentiment === '偏多' ? 'sig-up' : a.market.sentiment === '偏空' ? 'sig-down' : 'sig-mid';
+    sentimentEl.innerHTML = `<span class="sig ${sc}">大盘研判：${esc(a.market.sentiment)}</span> <span class="sentiment-note">${esc(
+      a.market.note || '',
+    )}</span>`;
+  } else {
+    sentimentEl.innerHTML = '';
+  }
+
+  // 指数 chips（实时）
+  const idx = (state.liveQuotes && state.liveQuotes.indices) || [];
+  chipsEl.innerHTML = idx.length
+    ? idx
+        .map(
+          (i) =>
+            `<span class="idx-chip ${signClass(i.changePct)}">${esc(i.name)} <b>${fmtPct(i.changePct)}</b></span>`,
+        )
+        .join('')
+    : '';
+
+  if (!a) {
+    box.innerHTML = '<div class="placeholder">综合推荐尚未生成，请稍候或点击「刷新」。</div>';
+    return;
+  }
+  if (a.noKey) {
+    box.innerHTML =
+      '<div class="placeholder">尚未配置 DeepSeek API Key，无法生成综合推荐。<br/>请在项目根目录 <code>.env</code> 中填入 <code>DEEPSEEK_API_KEY</code> 后重启服务。</div>';
+    return;
+  }
+  if (a.error) {
+    box.innerHTML = `<div class="placeholder">综合推荐生成失败（${esc(a.error)}），请稍后重试。</div>`;
+    return;
+  }
+  const list = a.recommendations || [];
+  if (!list.length) {
+    box.innerHTML = '<div class="placeholder">暂无可推荐标的。</div>';
+    return;
+  }
+
+  // 用实时行情覆盖每只推荐标的的价/涨跌/资金（按代码匹配）
+  const mb = {};
+  (state.liveQuotes && state.liveQuotes.stocks ? state.liveQuotes.stocks : []).forEach((q) => {
+    mb[q.code] = q;
+  });
+
+  box.innerHTML = list
+    .map((r) => {
+      const q = r.code && mb[r.code] ? mb[r.code] : null;
+      const price = q ? q.price : r.price;
+      const chg = q ? q.changePct : r.changePct;
+      const inflow = q ? q.mainNetInflow : r.mainNetInflow;
+      const turnover = q ? q.turnover : r.turnover;
+      const score = typeof r.score === 'number' ? r.score : 50;
+      const sc2 = score >= 70 ? 'sig-up' : score >= 40 ? 'sig-mid' : 'sig-down';
+      return `<div class="reco-card" data-code="${esc(r.code || '')}">
+        <div class="reco-head">
+          <div class="reco-name">${esc(r.name || '—')}<span class="reco-code">${esc(r.code || '')}</span><span class="reco-mkt">${esc(
+            r.market || '',
+          )}</span></div>
+          <span class="badge ${actionClass(r.action)}">${esc(r.action || '持有')}</span>
+        </div>
+        <div class="reco-score">
+          <div class="score-bar"><span class="score-fill ${sc2}" style="width:${score}%"></span></div>
+          <span class="score-num ${sc2}">${score}</span>
+          <span class="reco-conf">信心 ${esc(r.confidence || '中')}</span>
+        </div>
+        <div class="reco-signals">
+          ${signalTag('新闻面', r.newsSignal)}
+          ${signalTag('行情面', r.quoteSignal)}
+          ${r.divergence ? '<span class="sig sig-div">⚠ 背离</span>' : ''}
+        </div>
+        <div class="reco-quote">
+          <span class="${signClass(chg)}">现价 ${price == null ? '—' : price}</span>
+          <span class="${signClass(chg)}">${fmtPct(chg)}</span>
+          <span class="${signClass(inflow)}">主力 ${fmtYi(inflow)}</span>
+          ${turnover != null ? `<span>换手 ${turnover}%</span>` : ''}
+        </div>
+        <div class="reco-reason">${esc(r.reason || '')}</div>
+      </div>`;
+    })
+    .join('');
+}
+
+async function loadRecommendations() {
+  try {
+    state.reco = await api('/api/recommendations');
+  } catch (e) {
+    state.reco = null;
+  }
+  renderRecoCombined();
+}
+
+async function loadLiveQuotes() {
+  try {
+    const d = await api('/api/quotes');
+    state.liveQuotes = d;
+    renderRecoCombined();
+    const meta = document.getElementById('recoMeta');
+    if (meta) {
+      const prefix = state.lastRecoUpdate ? '推荐 ' + fmtTime(state.lastRecoUpdate) + ' · ' : '';
+      meta.textContent = prefix + '行情 ' + fmtTime(d.fetchedAt);
+    }
+  } catch (e) {
+    // 静默失败，下次轮询重试
+  }
+}
+
 // ===== 加载 =====
 async function loadConfig() {
   const c = await api('/api/config');
@@ -313,6 +464,9 @@ async function loadConfig() {
   document.getElementById('aiMeta').textContent = c.lastAnalysisUpdate
     ? '分析更新 ' + fmtTime(c.lastAnalysisUpdate)
     : '';
+  state.lastRecoUpdate = c.lastRecoUpdate || null;
+  const rm = document.getElementById('recoMeta');
+  if (rm) rm.textContent = c.lastRecoUpdate ? '推荐 ' + fmtTime(c.lastRecoUpdate) : '—';
   return c;
 }
 
@@ -386,7 +540,7 @@ function wireLiveControls() {
     btn.textContent = '刷新中…';
     await api('/api/refresh', { method: 'POST' });
     await new Promise((r) => setTimeout(r, 1500));
-    await Promise.all([loadConfig(), loadNews(), loadAnalysis()]);
+    await Promise.all([loadConfig(), loadNews(), loadAnalysis(), loadRecommendations(), loadLiveQuotes()]);
     btn.disabled = false;
     btn.textContent = '↻ 刷新';
   });
@@ -397,9 +551,11 @@ async function init() {
     await loadConfig();
     await Promise.all([loadNews(), loadAnalysis()]);
     wireLiveControls();
-    // 自动轮询，保持与每日更新同步
+    await Promise.all([loadRecommendations(), loadLiveQuotes()]);
+    // 自动轮询：新闻/分析每日级，综合推荐行情每 30s 实时刷新
     setInterval(loadNews, 5 * 60 * 1000);
     setInterval(loadAnalysis, 15 * 60 * 1000);
+    setInterval(loadLiveQuotes, 30 * 1000);
   } catch (e) {
     // 后端不可用 -> 静态快照模式（云端纯静态部署）
     try {

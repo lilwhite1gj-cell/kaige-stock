@@ -85,6 +85,18 @@ const server = http.createServer(async (req, res) => {
       return sendJson(res, 200, await scheduler.getAnalysis());
     }
 
+    if (pathname === '/api/quotes' && req.method === 'GET') {
+      try {
+        return sendJson(res, 200, await scheduler.getLiveQuotes());
+      } catch (e) {
+        return sendJson(res, 500, { error: String(e && e.message ? e.message : e) });
+      }
+    }
+
+    if (pathname === '/api/recommendations' && req.method === 'GET') {
+      return sendJson(res, 200, await scheduler.getRecommendations());
+    }
+
     if (pathname === '/api/refresh' && req.method === 'POST') {
       scheduler.refreshAll(config.deepseek.apiKey).catch(() => {});
       return sendJson(res, 200, { ok: true, message: '已触发刷新' });

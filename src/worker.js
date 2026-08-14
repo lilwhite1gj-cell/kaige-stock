@@ -54,6 +54,19 @@ async function handleApi(request, env, ctx) {
     return json(await scheduler.getAnalysis());
   }
 
+  if (p === '/api/quotes' && request.method === 'GET') {
+    // 实时行情：重新抓取（受服务端 30s 缓存保护），不落库
+    try {
+      return json(await scheduler.getLiveQuotes());
+    } catch (e) {
+      return json({ error: String(e && e.message ? e.message : e) }, 500);
+    }
+  }
+
+  if (p === '/api/recommendations' && request.method === 'GET') {
+    return json(await scheduler.getRecommendations());
+  }
+
   if (p === '/api/refresh' && request.method === 'POST') {
     // 同步等待刷新完成（含抓取+AI），确保结果写入 KV 后再返回
     try {
