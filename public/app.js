@@ -12,6 +12,7 @@ const state = {
   selectedMarkets: [],
   reco: null,
   liveQuotes: null,
+  etfQuotes: null,
   lastRecoUpdate: null,
 };
 
@@ -180,6 +181,7 @@ function gradeClass(grade) {
 function actionBadge(action) {
   if (action === '买入') return '<span class="badge badge-buy">买入</span>';
   if (action === '持有') return '<span class="badge badge-hold">持有</span>';
+  if (action === '定投') return '<span class="badge badge-dca">定投</span>';
   return '<span class="badge badge-avoid">回避</span>';
 }
 
@@ -248,20 +250,6 @@ function renderAnalysis(a) {
 
   const summary = a.summary ? `<div class="summary-box">📊 ${esc(a.summary)}</div>` : '';
 
-  const etfs = (a.etfs || [])
-    .map(
-      (e) => `<div class="etf-card">
-        <div class="etf-top">
-          <span class="etf-name">${esc(e.name || 'ETF')}</span>
-          ${actionBadge(e.action)}
-        </div>
-        <div class="etf-code">${esc(e.code || '')}</div>
-        <div class="etf-sector">板块：${esc(e.sector || '')}</div>
-        <div class="etf-reason">${esc(e.reason || '')}</div>
-      </div>`
-    )
-    .join('');
-
   const marketFilterHtml = ['全部'].concat(MARKET_OPTIONS)
     .map((m) => {
       const active = m === '全部' ? state.selectedMarkets.length === 0 : state.selectedMarkets.includes(m);
@@ -278,8 +266,6 @@ function renderAnalysis(a) {
       ${col('grade-mid', '⚠️ 少量持有个股', groups.mid)}
       ${col('grade-down', '🚫 高风险个股', groups.down)}
     </div>
-    <h3 style="margin:6px 0 10px;font-size:15px;">每日 ETF 板块建议</h3>
-    <div class="etf-grid">${etfs || '<div class="placeholder">暂无 ETF 建议</div>'}</div>
   `;
 
   // 市场筛选交互
@@ -299,6 +285,113 @@ function renderAnalysis(a) {
       });
     });
   }
+}
+
+// ===== ETF 板块推荐（国内 + 纳斯达克相关） =====
+function getLiveEtfByCode(code) {
+  const all = [
+    ...(state.etfQuotes && state.etfQuotes.domestic ? state.etfQuotes.domestic : []),
+    ...(state.etfQuotes && state.etfQuotes.nasdaq ? state.etfQuotes.nasdaq : []),
+  ];
+  return all.find((x) => x.code === code) || null;
+}
+
+function etfCard(e) {
+  const live = getLiveEtfByCode(e.code);
+  const price = live && live.price != null ? live.price : e.price;
+  const chg = live && live.changePct != null ? live.changePct : e.changePct;
+  const chgCls = chg == null ? 'flat' : chg > 0 ? 'up' : chg < 0 ? 'down' : 'flat';
+  const chgStr = chg == null ? '—' : (chg > 0 ? '+' : '') + chg.toFixed(2) + '%';
+  const pxStr = price == null ? '—' : price > 100 ? price.toFixed(2) : price.toFixed(3);
+  return `<div class="etf-card" data-code="${esc(e.code || '')}">
+    <div class="etf-top"><span class="etf-name">${esc(e.name || 'ETF')}</span>${actionBadge(e.action)}</div>
+    <div class="etf-code">${esc(e.code || '')}</div>
+    <div class="etf-price"><span class="etf-px ${chgCls}">${pxStr}</span> <span class="etf-chg ${chgCls}">${chgStr}</span></div>
+    <div class="etf-reason">${esc(e.logic || '')}</div>
+  </div>`;
+}
+
+function renderEtf(a) {
+  const box = document.getElementById('etfContent');
+  if (!box) return;
+  if (a && a.snapshotNote) {
+    box.innerHTML = '<div class="placeholder">云端静态版不包含 ETF 板块推荐。请在完整版（<code>node server.js</code>）配置 DeepSeek Key 后查看。</div>';
+    return;
+  }
+  if (!state.aiEnabled) {
+    box.innerHTML = '<div class="placeholder">AI 分析已关闭。打开右上角「AI 分析」开关即可查看 ETF 板块推荐。</div>';
+    return;
+  }
+  if (a && a.noKey) {
+    box.innerHTML = '<div class="placeholder">尚未配置 DeepSeek API Key，无法生成 ETF 推荐。<br/>请在 <code>.env</code> 中填入 <code>DEEPSEEK_API_KEY</code> 后重启服务。</div>';
+    return;
+  }
+  if (a && a.error) {
+    box.innerHTML = `<div class="placeholder">ETF 推荐生成失败（${esc(a.error)}），请稍后重试。</div>`;
+    return;
+  }
+  const etfs = (a && a.etfs) || [];
+  if (!etfs.length) {
+    box.innerHTML = '<div class="placeholder">ETF 推荐尚未生成，请稍候或点击「刷新」。</div>';
+    return;
+  }
+
+  const cats = ['国内', '纳斯达克相关'];
+  const catTitles = { 国内: '🇨🇳 国内板块 ETF', '纳斯达克相关': '🌐 纳斯达克相关 ETF' };
+  let html = '';
+  for (const cat of cats) {
+    const list = etfs.filter((e) => e.category === cat);
+    if (!list.length) continue;
+    // 板块分类：按 sector 分组
+    const sectors = {};
+    list.forEach((e) => {
+      const k = e.sector || '其他';
+      (sectors[k] = sectors[k] || []).push(e);
+    });
+    let secHtml = '';
+    for (const sec of Object.keys(sectors)) {
+      secHtml += `<div class="etf-sector-group">
+        <div class="etf-sector-title">${esc(sec)}</div>
+        <div class="etf-card-row">${sectors[sec].map(etfCard).join('')}</div>
+      </div>`;
+    }
+    html += `<div class="etf-cat"><h3 class="etf-cat-title">${catTitles[cat]}</h3>${secHtml}</div>`;
+  }
+  box.innerHTML = html;
+}
+
+// 实时行情轮询：拉取最新 ETF 价/涨跌并就地更新卡片（不整页重渲染）
+async function loadEtfQuotes() {
+  try {
+    const d = await api('/api/etf-quotes');
+    state.etfQuotes = d;
+    updateEtfPrices();
+  } catch (e) {
+    // 静默失败，下次轮询重试
+  }
+}
+
+function updateEtfPrices() {
+  if (!state.etfQuotes) return;
+  const all = [
+    ...(state.etfQuotes.domestic || []),
+    ...(state.etfQuotes.nasdaq || []),
+  ];
+  document.querySelectorAll('.etf-card[data-code]').forEach((card) => {
+    const q = all.find((x) => x.code === card.dataset.code);
+    if (!q) return;
+    const px = card.querySelector('.etf-px');
+    const chg = card.querySelector('.etf-chg');
+    if (q.price != null && px) {
+      px.textContent = q.price > 100 ? q.price.toFixed(2) : q.price.toFixed(3);
+      px.className = 'etf-px ' + signClass(q.changePct);
+    }
+    if (q.changePct != null && chg) {
+      const v = q.changePct;
+      chg.textContent = (v > 0 ? '+' : '') + v.toFixed(2) + '%';
+      chg.className = 'etf-chg ' + signClass(v);
+    }
+  });
 }
 
 // ===== 综合荐股（新闻 × 行情） =====
@@ -483,6 +576,7 @@ async function loadAnalysis() {
   const a = await api('/api/analysis');
   state.analysis = a;
   renderAnalysis(a);
+  renderEtf(a);
 }
 
 async function loadSnapshot() {
@@ -504,6 +598,7 @@ async function loadSnapshot() {
   renderSectorTabs();
   renderNews();
   renderAnalysis(d.analysis || { snapshotNote: true });
+  renderEtf(d.analysis || { snapshotNote: true });
   const meta = [];
   if (d.news.fetchedAt) meta.push('快照新闻 · ' + fmtTime(d.news.fetchedAt));
   if (d.news.sources && d.news.sources.length) meta.push('来源：' + d.news.sources.join('、'));
@@ -540,7 +635,7 @@ function wireLiveControls() {
     btn.textContent = '刷新中…';
     await api('/api/refresh', { method: 'POST' });
     await new Promise((r) => setTimeout(r, 1500));
-    await Promise.all([loadConfig(), loadNews(), loadAnalysis(), loadRecommendations(), loadLiveQuotes()]);
+    await Promise.all([loadConfig(), loadNews(), loadAnalysis(), loadRecommendations(), loadLiveQuotes(), loadEtfQuotes()]);
     btn.disabled = false;
     btn.textContent = '↻ 刷新';
   });
@@ -551,11 +646,12 @@ async function init() {
     await loadConfig();
     await Promise.all([loadNews(), loadAnalysis()]);
     wireLiveControls();
-    await Promise.all([loadRecommendations(), loadLiveQuotes()]);
-    // 自动轮询：新闻/分析每日级，综合推荐行情每 30s 实时刷新
+    await Promise.all([loadRecommendations(), loadLiveQuotes(), loadEtfQuotes()]);
+    // 自动轮询：新闻/分析每日级，综合推荐行情与 ETF 行情每 30s 实时刷新
     setInterval(loadNews, 5 * 60 * 1000);
     setInterval(loadAnalysis, 15 * 60 * 1000);
     setInterval(loadLiveQuotes, 30 * 1000);
+    setInterval(loadEtfQuotes, 30 * 1000);
   } catch (e) {
     // 后端不可用 -> 静态快照模式（云端纯静态部署）
     try {

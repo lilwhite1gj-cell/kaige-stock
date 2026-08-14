@@ -66,7 +66,14 @@ export async function refreshAnalysis(apiKey) {
     await requireStore().writeJson(ANALYSIS_FILE, { enabled: true, noKey: true, generatedAt: new Date().toISOString() });
     return;
   }
-  const r = await ai.generateAnalysis(news.items || [], apiKey);
+  // 抓取精选 ETF 池实时行情，作为 ETF 推荐的行情面依据（失败不阻断分析）
+  let etfQuotes = null;
+  try {
+    etfQuotes = await quotes.fetchEtfs();
+  } catch (e) {
+    etfQuotes = null;
+  }
+  const r = await ai.generateAnalysis(news.items || [], apiKey, etfQuotes);
   if (r.ok) {
     await requireStore().writeJson(ANALYSIS_FILE, Object.assign({ enabled: true }, r.data, { generatedAt: r.generatedAt }));
   } else {
@@ -212,6 +219,11 @@ export async function getQuotes() {
 
 export async function getRecommendations() {
   return requireStore().readJson(RECO_FILE, { enabled: false });
+}
+
+// 实时 ETF 行情（前端轮询用）：重新抓取（受 fetchQuotes 内部 30s 缓存保护），不落库
+export async function getEtfQuotes() {
+  return quotes.fetchEtfs();
 }
 
 export async function getConfig(apiKey) {

@@ -246,6 +246,33 @@ function num(v) {
   return Number.isFinite(n) ? n : null;
 }
 
+// 精选 ETF 池实时行情（聚焦国内板块 + 纳斯达克相关）
+// 返回 { domestic:[...], nasdaq:[...], fetchedAt }，每项含真实 price/changePct
+export async function fetchEtfs() {
+  const cfg = config.etf || {};
+  const mapGroup = async (list, category) =>
+    Promise.all(
+      (list || []).map(async (x) => {
+        const q = await fetchQuote(x.secid).catch(() => null);
+        return {
+          secid: x.secid,
+          code: x.code,
+          name: x.name,
+          sector: x.sector,
+          category,
+          price: q ? q.price : null,
+          changePct: q ? q.changePct : null,
+          hasQuote: !!q,
+        };
+      }),
+    );
+  const [domestic, nasdaq] = await Promise.all([
+    mapGroup(cfg.domestic, '国内'),
+    mapGroup(cfg.nasdaq, '纳斯达克相关'),
+  ]);
+  return { domestic, nasdaq, fetchedAt: new Date().toISOString() };
+}
+
 // 强制刷新缓存（用于 ?force=1）
 export function clearQuoteCache() {
   quoteCache.clear();

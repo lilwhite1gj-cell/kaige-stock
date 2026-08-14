@@ -36,6 +36,32 @@ export const config = {
     // 融合结果缓存 TTL（毫秒）：AI 判断不需每次轮询刷新，价格由 /api/quotes 实时叠加
     cacheMs: parseInt(process.env.RECO_CACHE_MS || '900000', 10),
   },
+  // ETF 板块推荐池（聚焦两类市场：国内板块 + 纳斯达克相关）
+  // secid 为东方财富代码；sector 为板块分类（前端据此分组）
+  etf: {
+    // 国内板块 ETF：宽基核心 + 行业 + 策略
+    domestic: [
+      { secid: '1.510300', name: '沪深300ETF', code: '510300', sector: '宽基·核心' },
+      { secid: '1.510500', name: '中证500ETF', code: '510500', sector: '宽基·中盘' },
+      { secid: '0.159915', name: '创业板ETF', code: '159915', sector: '宽基·成长' },
+      { secid: '1.588000', name: '科创50ETF', code: '588000', sector: '宽基·科技' },
+      { secid: '1.512480', name: '半导体ETF', code: '512480', sector: '行业·半导体' },
+      { secid: '1.515030', name: '新能源车ETF', code: '515030', sector: '行业·新能源' },
+      { secid: '1.512010', name: '医药ETF', code: '512010', sector: '行业·医药' },
+      { secid: '0.159928', name: '消费ETF', code: '159928', sector: '行业·消费' },
+      { secid: '1.512000', name: '券商ETF', code: '512000', sector: '行业·金融' },
+      { secid: '1.512800', name: '银行ETF', code: '512800', sector: '行业·金融' },
+      { secid: '1.512660', name: '军工ETF', code: '512660', sector: '行业·军工' },
+      { secid: '1.510880', name: '红利ETF', code: '510880', sector: '策略·红利' },
+    ],
+    // 纳斯达克相关 ETF：纳指100 跟踪 + 美股大盘对比
+    nasdaq: [
+      { secid: '1.513100', name: '纳指ETF', code: '513100', sector: '纳斯达克100' },
+      { secid: '1.513300', name: '纳斯达克ETF', code: '513300', sector: '纳斯达克100' },
+      { secid: '1.513500', name: '标普500ETF', code: '513500', sector: '美股大盘·标普500' },
+      { secid: '1.513400', name: '道琼斯ETF', code: '513400', sector: '美股大盘·道琼斯' },
+    ],
+  },
   // 数据源管理：按市场标签筛选/合并，支持重试与策略切换
   dataSources: {
     // 启用的市场标签；空数组 = 启用全部。可选值：'综合' | 'A股' | '港股' | '美股'

@@ -67,6 +67,15 @@ async function handleApi(request, env, ctx) {
     return json(await scheduler.getRecommendations());
   }
 
+  if (p === '/api/etf-quotes' && request.method === 'GET') {
+    // 精选 ETF 池实时行情（无需 Key），前端 30s 轮询叠加到推荐卡
+    try {
+      return json(await scheduler.getEtfQuotes());
+    } catch (e) {
+      return json({ error: String(e && e.message ? e.message : e) }, 500);
+    }
+  }
+
   if (p === '/api/refresh' && request.method === 'POST') {
     // 同步等待刷新完成（含抓取+AI），确保结果写入 KV 后再返回
     try {

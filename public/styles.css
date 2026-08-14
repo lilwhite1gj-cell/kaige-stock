@@ -244,6 +244,29 @@ body {
 .badge-buy { background: var(--up-soft); color: var(--up); }
 .badge-hold { background: var(--mid-soft); color: var(--mid); }
 .badge-avoid { background: var(--down-soft); color: var(--down); }
+.badge-dca { background: #e8f0ff; color: #2563eb; }
+
+/* ETF 板块推荐面板 */
+.etf-hint { font-size: 12px; color: var(--muted); background: var(--brand-soft); border-radius: 10px; padding: 9px 12px; margin-bottom: 14px; }
+.etf-cat { margin-bottom: 18px; }
+.etf-cat-title { font-size: 15px; margin: 4px 0 8px; }
+.etf-sector-group { margin-bottom: 12px; }
+.etf-sector-title { font-size: 13px; color: var(--brand); font-weight: 600; margin-bottom: 6px; padding-left: 2px; }
+.etf-card-row {
+  display: flex; gap: 12px; overflow-x: auto; padding-bottom: 6px; scroll-snap-type: x mandatory;
+}
+.etf-card-row .etf-card { flex: 0 0 auto; width: 250px; scroll-snap-align: start; }
+.etf-card { border: 1px solid var(--border); border-radius: 12px; padding: 13px 15px; background: var(--card); }
+.etf-card .etf-top { display: flex; justify-content: space-between; align-items: center; margin-bottom: 6px; }
+.etf-name { font-weight: 600; font-size: 14px; }
+.etf-code { color: var(--muted); font-size: 12px; }
+.etf-price { margin: 6px 0; font-size: 13px; }
+.etf-px { font-weight: 700; font-size: 15px; }
+.etf-chg { margin-left: 6px; font-weight: 600; }
+.etf-chg.up, .etf-px.up { color: var(--up); }
+.etf-chg.down, .etf-px.down { color: var(--down); }
+.etf-chg.flat, .etf-px.flat { color: var(--muted); }
+.etf-reason { font-size: 12px; color: var(--muted); line-height: 1.5; }
 
 /* 提示/占位 */
 .placeholder {
