@@ -192,7 +192,7 @@ body {
 .pg-size { border: 1px solid var(--border); border-radius: 8px; padding: 4px 6px; font-size: 12px; color: var(--text); background: #fff; }
 
 /* AI 区块 */
-.grade-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 14px; margin-bottom: 22px; }
+.grade-grid { display: flex; flex-direction: column; gap: 14px; margin-bottom: 22px; }
 .grade-col {
   border-radius: 12px; padding: 14px; border: 1px solid var(--border);
 }
@@ -258,7 +258,6 @@ body {
 
 /* 响应式 */
 @media (max-width: 760px) {
-  .grade-grid { grid-template-columns: 1fr; }
   .topbar-inner { flex-wrap: wrap; gap: 10px; }
   .brand-text p { display: none; }
   .panel { padding: 14px; }
