@@ -28,6 +28,34 @@ async function withRetry(name, fn, retries, timeoutMs) {
   throw lastErr || new Error(name + ' 失败');
 }
 
+// 从形如 `var xxx = [...]` 的 JS 赋值语句中稳健提取 JSON 数组文本（兼容嵌套、字符串内的括号）
+function extractJsArray(text, varName) {
+  const marker = 'var ' + varName + ' = ';
+  const idx = text.indexOf(marker);
+  if (idx < 0) return null;
+  const start = text.indexOf('[', idx);
+  if (start < 0) return null;
+  let depth = 0;
+  let inStr = false;
+  let esc = false;
+  for (let i = start; i < text.length; i++) {
+    const ch = text[i];
+    if (inStr) {
+      if (esc) esc = false;
+      else if (ch === '\\') esc = true;
+      else if (ch === '"' || ch === "'") inStr = false;
+      continue;
+    }
+    if (ch === '"' || ch === "'") inStr = true;
+    else if (ch === '[') depth++;
+    else if (ch === ']') {
+      depth--;
+      if (depth === 0) return text.slice(start, i + 1);
+    }
+  }
+  return null;
+}
+
 // ---------- 现有综合财经源（覆盖 A股 / 港股内容） ----------
 
 // 新浪财经 滚动新闻
@@ -298,20 +326,26 @@ async function fetchJin10(signal) {
   });
   if (!res.ok) throw new Error('jin10 http ' + res.status);
   const text = await res.text();
-  // 返回 JSONP：flashNewestCallback([...])
-  const m = /flashNewestCallback\(\s*(\[[\s\S]*\])\s*\)/i.exec(text);
-  if (!m) throw new Error('jin10 非预期格式');
-  const arr = JSON.parse(m[1]);
+  // 真实返回为 `var newest = [{...}]`（JS 变量赋值，非 JSONP），需提取数组后解析
+  const arrText = extractJsArray(text, 'newest');
+  if (!arrText) throw new Error('jin10 非预期格式');
+  let arr;
+  try {
+    arr = JSON.parse(arrText);
+  } catch (e) {
+    throw new Error('jin10 解析失败: ' + e.message);
+  }
   if (!Array.isArray(arr) || !arr.length) throw new Error('jin10 空数据');
   return arr
     .slice(0, config.newsLimit)
     .map((it) => {
-      const title = String(it.title || it.content || '').trim();
-      const content = String(it.content || it.summary || '').trim();
+      const d = it.data || {};
+      const title = String(d.title || d.content || '').trim();
+      const content = String(d.content || d.title || '').trim();
       return {
-        id: String(it.id || it.nid || title),
+        id: String(it.id || title),
         title,
-        url: it.url || '',
+        url: d.source_link || '',
         time: it.time
           ? new Date(String(it.time).replace(/-/g, '/')).toISOString()
           : new Date().toISOString(),
@@ -322,17 +356,28 @@ async function fetchJin10(signal) {
     .filter((it) => it.title);
 }
 
-// ---------- 新增：国际/美股友好源（华尔街见闻 RSS） ----------
+// ---------- 新增：国际/美股友好源（RSS，海外节点可达） ----------
 
-// 华尔街见闻 RSS（综合 / 美股 / 港股），海外节点可达性较好
-async function fetchWallstreet(signal) {
-  const res = await fetch('https://wallstreetcn.com/rss/news', {
+// Investing.com 市场快讯（美股 / 港股），海外节点可达性较好
+async function fetchInvesting(signal) {
+  const res = await fetch('https://www.investing.com/rss/news_25.rss', {
     headers: { 'User-Agent': UA, Accept: 'application/rss+xml, application/xml, text/xml' },
     signal,
   });
-  if (!res.ok) throw new Error('wallstreetcn http ' + res.status);
+  if (!res.ok) throw new Error('investing http ' + res.status);
   const xml = await res.text();
-  return parseRss(xml, '华尔街见闻', config.newsLimit);
+  return parseRss(xml, 'Investing.com', config.newsLimit);
+}
+
+// CNBC 美股 Top News（冗余备份，提升海外可达性）
+async function fetchCnbc(signal) {
+  const res = await fetch(
+    'https://search.cnbc.com/rs/search/combinedcms/view.xml?partnerId=wrss01&id=100003114',
+    { headers: { 'User-Agent': UA, Accept: 'application/rss+xml, application/xml, text/xml' }, signal }
+  );
+  if (!res.ok) throw new Error('cnbc http ' + res.status);
+  const xml = await res.text();
+  return parseRss(xml, 'CNBC', config.newsLimit);
 }
 
 // ---------- 数据源注册表（按市场标签归类） ----------
@@ -346,7 +391,8 @@ export const SOURCES = [
   { id: 'marketwatch', name: 'MarketWatch', markets: ['美股'], fetch: fetchMarketWatch },
   { id: 'ths', name: '同花顺', markets: ['综合', 'A股', '港股'], fetch: fetchThs },
   { id: 'jin10', name: '金十数据', markets: ['综合', 'A股'], fetch: fetchJin10 },
-  { id: 'wallstreet', name: '华尔街见闻', markets: ['综合', '美股', '港股'], fetch: fetchWallstreet },
+  { id: 'investing', name: 'Investing.com', markets: ['综合', '美股', '港股'], fetch: fetchInvesting },
+  { id: 'cnbc', name: 'CNBC', markets: ['美股'], fetch: fetchCnbc },
 ];
 
 // 兜底示例数据：当所有实时源都不可用时，保证页面有内容
@@ -472,4 +518,4 @@ export async function fetchAll() {
   };
 }
 
-export { fetchSina, fetchEastmoney, fetchCls, fetchCninfo, fetchSinaHK, fetchYahooUS, fetchMarketWatch, fetchThs, fetchJin10, fetchWallstreet };
+export { fetchSina, fetchEastmoney, fetchCls, fetchCninfo, fetchSinaHK, fetchYahooUS, fetchMarketWatch, fetchThs, fetchJin10, fetchInvesting, fetchCnbc };
